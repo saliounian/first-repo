@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===================== Theme tokens ===================== */
+:root {
+  --c-bg: 250 250 248;
+  --c-sand: 244 242 238;
+  --c-surface: 255 255 255;
+  --c-ink: 31 36 33;
+  --c-muted: 122 126 123;
+  --c-line: 236 234 228;
+  --c-brick-50: 241 247 243;
+  --c-brick-100: 220 237 227;
+  --c-brick-500: 13 92 46;
+  --c-brick-600: 10 74 37;
+  color-scheme: light;
+}
+
+html.dark {
+  --c-bg: 14 17 15;
+  --c-sand: 22 26 23;
+  --c-surface: 24 29 25;
+  --c-ink: 235 238 235;
+  --c-muted: 150 156 152;
+  --c-line: 40 46 42;
+  --c-brick-50: 20 40 28;
+  --c-brick-100: 28 60 40;
+  --c-brick-500: 86 178 122;
+  --c-brick-600: 110 200 144;
+  color-scheme: dark;
+}
+
+/* ===================== Base ===================== */
+html, body, #root { height: 100%; }
+html, body {
+  background-color: rgb(var(--c-bg) / 1);
+  color: rgb(var(--c-ink) / 1);
+}
+body {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  transition: background-color .25s ease, color .25s ease;
+}
+
+/* scrollbar */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgb(var(--c-line) / 1); border-radius: 8px; }
+
+/* utility */
+.tabular-nums { font-variant-numeric: tabular-nums; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+@keyframes fadeIn { from { opacity:0; transform: translateY(2px);} to { opacity:1; transform:none;} }
+.fade-in { animation: fadeIn .2s ease-out both; }
+
+@keyframes slideIn { from { opacity:0; transform: translateY(8px);} to { opacity:1; transform:none;} }
+.slide-in { animation: slideIn .25s ease-out both; }
+
+/* ===================== Form utility ===================== */
+.field-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+  border: 1px solid rgb(var(--c-line) / 0.7);
+  border-radius: 0.5rem;
+  background: rgb(var(--c-surface) / 1);
+  color: rgb(var(--c-ink) / 1);
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.field-input:focus {
+  outline: none;
+  border-color: rgb(var(--c-brick-500) / 1);
+  box-shadow: 0 0 0 3px rgb(var(--c-brick-500) / 0.08);
+}
+.field-input option { background: rgb(var(--c-surface) / 1); }
