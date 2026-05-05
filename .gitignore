@@ -37,3 +37,6 @@ Thumbs.db
 # Test coverage
 coverage/
 .nyc_output/
+
+# Local Netlify folder
+.netlify

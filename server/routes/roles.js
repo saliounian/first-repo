@@ -1,32 +1,33 @@
 import { Router } from 'express';
-import db from '../db.js';
+import supabase from '../db.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
 router.use(requireAuth, requireAdmin);
 
 // ─── GET /api/roles ───────────────────────────────────────────────────────────
-router.get('/', (req, res) => {
-  const roles = db.prepare('SELECT * FROM roles ORDER BY id').all();
-  res.json(roles);
-});
-
-// ─── GET /api/roles/:id/permissions ──────────────────────────────────────────
-router.get('/:id/permissions', (req, res) => {
-  const perms = db.prepare(`
-    SELECT p.*
-    FROM role_permissions rp
-    JOIN permissions p ON p.id = rp.permission_id
-    WHERE rp.role_id = ?
-    ORDER BY p.module, p.action
-  `).all(req.params.id);
-  res.json(perms);
+router.get('/', async (_req, res) => {
+  const { data, error } = await supabase.from('roles').select('*').order('id');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
 });
 
 // ─── GET /api/roles/permissions/all ──────────────────────────────────────────
-router.get('/permissions/all', (req, res) => {
-  const perms = db.prepare('SELECT * FROM permissions ORDER BY module, action').all();
-  res.json(perms);
+// Must be before /:id route to avoid conflict
+router.get('/permissions/all', async (_req, res) => {
+  const { data, error } = await supabase.from('permissions').select('*').order('module').order('action');
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data);
+});
+
+// ─── GET /api/roles/:id/permissions ──────────────────────────────────────────
+router.get('/:id/permissions', async (req, res) => {
+  const { data, error } = await supabase
+    .from('role_permissions')
+    .select('permissions(id, module, action, description)')
+    .eq('role_id', req.params.id);
+  if (error) return res.status(500).json({ error: error.message });
+  res.json((data || []).map(r => r.permissions));
 });
 
 export default router;

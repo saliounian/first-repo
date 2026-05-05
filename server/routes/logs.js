@@ -1,61 +1,53 @@
 import { Router } from 'express';
-import db from '../db.js';
+import supabase from '../db.js';
 import { requireAuth, requireAdmin } from '../middleware/auth.js';
 
 const router = Router();
 router.use(requireAuth, requireAdmin);
 
 // ─── GET /api/logs ────────────────────────────────────────────────────────────
-// Query params: userId, module, resultat, dateFrom, dateTo, limit, offset
-router.get('/', (req, res) => {
-  const { userId, module, resultat, dateFrom, dateTo,
-          limit = 100, offset = 0 } = req.query;
+router.get('/', async (req, res) => {
+  const { userId, module, resultat, dateFrom, dateTo, limit = 100, offset = 0 } = req.query;
 
-  const conditions = [];
-  const params = [];
+  let query = supabase
+    .from('activity_logs')
+    .select('*', { count: 'exact' })
+    .order('created_at', { ascending: false })
+    .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
 
-  if (userId) { conditions.push('l.user_id = ?'); params.push(userId); }
-  if (module)  { conditions.push('l.module = ?'); params.push(module); }
-  if (resultat){ conditions.push('l.resultat = ?'); params.push(resultat); }
-  if (dateFrom){ conditions.push("date(l.created_at) >= date(?)"); params.push(dateFrom); }
-  if (dateTo)  { conditions.push("date(l.created_at) <= date(?)"); params.push(dateTo); }
+  if (userId)   query = query.eq('user_id', userId);
+  if (module)   query = query.eq('module', module);
+  if (resultat) query = query.eq('resultat', resultat);
+  if (dateFrom) query = query.gte('created_at', dateFrom);
+  if (dateTo)   query = query.lte('created_at', dateTo + 'T23:59:59Z');
 
-  const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+  const { data: logs, error, count } = await query;
+  if (error) return res.status(500).json({ error: error.message });
 
-  const logs = db.prepare(`
-    SELECT l.id, l.user_id, l.user_nom, l.user_email,
-           l.action, l.module, l.ancienne_valeur, l.nouvelle_valeur,
-           l.resultat, l.raison_echec, l.created_at
-    FROM activity_logs l
-    ${where}
-    ORDER BY l.created_at DESC
-    LIMIT ? OFFSET ?
-  `).all(...params, parseInt(limit), parseInt(offset));
-
-  const total = db.prepare(`
-    SELECT COUNT(*) as cnt FROM activity_logs l ${where}
-  `).get(...params).cnt;
-
-  res.json({ logs, total, limit: parseInt(limit), offset: parseInt(offset) });
+  res.json({ logs, total: count, limit: parseInt(limit), offset: parseInt(offset) });
 });
 
 // ─── GET /api/logs/users ─────────────────────────────────────────────────────
-// Returns list of distinct users who have logs (for filter dropdown)
-router.get('/users', (req, res) => {
-  const users = db.prepare(`
-    SELECT DISTINCT user_id, user_nom, user_email
-    FROM activity_logs
-    WHERE user_id IS NOT NULL
-    ORDER BY user_nom
-  `).all();
+router.get('/users', async (_req, res) => {
+  const { data } = await supabase
+    .from('activity_logs')
+    .select('user_id, user_nom, user_email')
+    .not('user_id', 'is', null)
+    .order('user_nom');
+
+  // Deduplicate
+  const seen = new Set();
+  const users = (data || []).filter(r => {
+    if (seen.has(r.user_id)) return false;
+    seen.add(r.user_id); return true;
+  });
   res.json(users);
 });
 
 // ─── GET /api/logs/modules ───────────────────────────────────────────────────
-router.get('/modules', (req, res) => {
-  const modules = db.prepare(`
-    SELECT DISTINCT module FROM activity_logs ORDER BY module
-  `).all().map(r => r.module);
+router.get('/modules', async (_req, res) => {
+  const { data } = await supabase.from('activity_logs').select('module').order('module');
+  const modules = [...new Set((data || []).map(r => r.module))];
   res.json(modules);
 });
 

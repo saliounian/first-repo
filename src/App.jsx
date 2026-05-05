@@ -1,10 +1,13 @@
 import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext.jsx';
+import { ToastProvider } from './utils/toast.jsx';
 import Sidebar from './components/Sidebar.jsx';
 import MobileBottomNav from './components/MobileBottomNav.jsx';
 import Dashboard from './modules/Dashboard.jsx';
 import Analytics from './modules/Analytics.jsx';
-import Stock from './modules/Stock.jsx';
+import Boutiques from './modules/Boutiques.jsx';
+import ProduitsStock from './modules/ProduitsStock.jsx';
+import PointDeStock from './modules/PointDeStock.jsx';
 import Orders from './modules/Orders.jsx';
 import Clients from './modules/Clients.jsx';
 import Invoices from './modules/Invoices.jsx';
@@ -14,15 +17,16 @@ import Login from './modules/Login.jsx';
 import ChangePassword from './modules/ChangePassword.jsx';
 
 const ROUTES = {
-  dashboard: { Component: Dashboard,  title: 'Tableau de bord' },
-  analytics: { Component: Analytics,  title: 'Analytique' },
-  stock:     { Component: Stock,      title: 'Stock' },
-  inventory: { Component: Stock,      title: 'Inventaires', initialView: 'inventory' },
-  orders:    { Component: Orders,     title: 'Commandes' },
-  clients:   { Component: Clients,    title: 'Clients' },
-  invoices:  { Component: Invoices,   title: 'Factures' },
-  reports:   { Component: Reports,    title: 'Rapports' },
-  admin:     { Component: Admin,      title: 'Administration' }
+  dashboard:    { Component: Dashboard,  title: 'Tableau de bord' },
+  analytics:    { Component: Analytics,  title: 'Analytique' },
+  stock:        { Component: ProduitsStock, title: 'Produits & Stock' },
+  pointdestock: { Component: PointDeStock,  title: 'Point de stock' },
+  boutiques:    { Component: Boutiques,     title: 'Boutiques' },
+  orders:       { Component: Orders,     title: 'Commandes' },
+  clients:      { Component: Clients,    title: 'Clients' },
+  invoices:     { Component: Invoices,   title: 'Factures' },
+  reports:      { Component: Reports,    title: 'Rapports' },
+  admin:        { Component: Admin,      title: 'Administration' }
 };
 
 // ─── Inner app (needs auth context) ──────────────────────────────────────────
@@ -34,12 +38,18 @@ function AppShell() {
   // Reset route to dashboard whenever user changes (login/logout)
   useEffect(() => {
     setRoute('dashboard');
+    setFabOpen(false);
   }, [user?.id]);
 
   // Guard: if route requires admin and user is not admin, fall back to dashboard
   useEffect(() => {
     if (route === 'admin' && user?.role !== 'admin') setRoute('dashboard');
   }, [route, user?.role]);
+
+  // Reset FAB state when leaving Orders route
+  useEffect(() => {
+    if (route !== 'orders') setFabOpen(false);
+  }, [route]);
 
   // 1. Loading session
   if (loading) {
@@ -83,8 +93,10 @@ function AppShell() {
 // ─── Root ─────────────────────────────────────────────────────────────────────
 export default function App() {
   return (
-    <AuthProvider>
-      <AppShell />
-    </AuthProvider>
+    <ToastProvider>
+      <AuthProvider>
+        <AppShell />
+      </AuthProvider>
+    </ToastProvider>
   );
 }

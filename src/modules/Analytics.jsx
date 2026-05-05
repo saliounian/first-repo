@@ -4,14 +4,38 @@ import PageHeader, { HeaderFilter } from '../components/PageHeader.jsx';
 import MobileTopBar from '../components/MobileTopBar.jsx';
 import { Card, CardHeader, KpiCard, LineChart, HBarRow, Donut, Tabs } from '../components/ui.jsx';
 import { analyticsKPIs, revenueCurve, topShops, topProducts, stockHealth, shops } from '../data/mockData.js';
-import { fmtFcfa } from '../utils/format.js';
+import { fmtFcfa, fmtFcfaFull } from '../utils/format.js';
+import { downloadCSV } from '../utils/download.js';
+import { toast } from '../utils/toast.jsx';
+
+const PERIOD_OPTIONS = [
+  { value: '7',   label: '7 derniers jours' },
+  { value: '30',  label: '30 derniers jours' },
+  { value: '90',  label: '90 derniers jours' },
+  { value: 'mtd', label: 'Mois en cours' },
+  { value: 'ytd', label: 'Année en cours' },
+];
 
 export default function Analytics() {
   const [shopFilter, setShopFilter] = useState('all');
+  const [period, setPeriod]         = useState('30');
+  const [shopHeader, setShopHeader] = useState('all');
+
   const tabs = [
     { id: 'all', label: 'Toutes' },
     ...shops.map(s => ({ id: s.id, label: s.name }))
   ];
+
+  const shopOptions = [
+    { value: 'all', label: 'Toutes boutiques' },
+    ...shops.map(s => ({ value: s.id, label: s.name }))
+  ];
+
+  function exportCSV() {
+    const rows = revenueCurve.map(r => [`Jour ${r.day}`, r.value]);
+    downloadCSV('analytique-ca-30j.csv', ['Jour', 'CA (FCFA)'], rows);
+    toast.success('Export CSV téléchargé');
+  }
 
   return (
     <div className="fade-in">
@@ -22,13 +46,15 @@ export default function Analytics() {
           searchPlaceholder={null}
           filters={
             <>
-              <HeaderFilter>Toutes boutiques ▾</HeaderFilter>
-              <HeaderFilter>30 jours ▾</HeaderFilter>
+              <HeaderFilter value={shopHeader} onChange={setShopHeader} options={shopOptions} />
+              <HeaderFilter value={period} onChange={setPeriod} options={PERIOD_OPTIONS} />
             </>
           }
           rightExtras={
-            <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-line/70 rounded-lg hover:bg-surface">
-              <Download size={13} /> Exporter
+            <button
+              onClick={exportCSV}
+              className="flex items-center gap-1.5 px-4 py-2 text-[15px] border border-line/70 rounded-lg hover:bg-surface text-ink/80">
+              <Download size={15} /> Exporter
             </button>
           }
         />
@@ -110,14 +136,16 @@ export default function Analytics() {
             </div>
             <div className="mt-4 pt-3 border-t border-line/70 flex items-center justify-between text-sm">
               <span className="text-muted">Valeur stock</span>
-              <span className="font-semibold tabular-nums text-ink">{fmtFcfa(stockHealth.totalFcfa)} FCFA</span>
+              <span className="font-semibold tabular-nums text-ink">{fmtFcfaFull(stockHealth.totalFcfa)} FCFA</span>
             </div>
           </Card>
         </div>
 
         {/* Mobile export button */}
         <div className="lg:hidden">
-          <button className="w-full flex items-center justify-center gap-2 py-3 border border-line/70 rounded-xl text-sm text-ink/80 bg-surface hover:border-brick-200">
+          <button
+            onClick={exportCSV}
+            className="w-full flex items-center justify-center gap-2 py-3 border border-line/70 rounded-xl text-sm text-ink/80 bg-surface hover:border-brick-200">
             <Download size={14} /> Exporter les données
           </button>
         </div>

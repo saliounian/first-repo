@@ -51,6 +51,18 @@ export function AuthProvider({ children }) {
     setPermissions([]);
   }, []);
 
+  // ─── verifyPassword ─────────────────────────────────────────────────────
+  // Confirms the current user's identity before sensitive actions.
+  const verifyPassword = useCallback(async (password) => {
+    const res = await fetch('/api/auth/verify-password', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password })
+    });
+    return res.ok;
+  }, []);
+
   // ─── changePassword ─────────────────────────────────────────────────────
   const changePassword = useCallback(async ({ currentPassword, newPassword }) => {
     const res = await fetch('/api/auth/change-password', {
@@ -68,7 +80,7 @@ export function AuthProvider({ children }) {
   return (
     <AuthContext.Provider value={{
       user, permissions, loading,
-      can, login, logout, changePassword, setUser
+      can, login, logout, verifyPassword, changePassword, setUser
     }}>
       {children}
     </AuthContext.Provider>

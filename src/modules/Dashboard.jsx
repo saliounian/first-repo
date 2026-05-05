@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ShoppingCart, ArrowLeftRight, FileText, Search, AlertTriangle, ChevronRight } from 'lucide-react';
 import PageHeader, { HeaderFilter } from '../components/PageHeader.jsx';
 import MobileTopBar from '../components/MobileTopBar.jsx';
@@ -6,8 +7,18 @@ import {
   dashboardKPIs, shopPerformance, stockAlerts, recentActivity, tasks, revenueCurve
 } from '../data/mockData.js';
 import { fmtFcfa } from '../utils/format.js';
+import { toast } from '../utils/toast.jsx';
+
+const PERIOD_OPTIONS = [
+  { value: '7',  label: '7 derniers jours' },
+  { value: '30', label: '30 derniers jours' },
+  { value: '90', label: '90 derniers jours' },
+  { value: 'mtd', label: 'Mois en cours' },
+  { value: 'ytd', label: 'Année en cours' },
+];
 
 export default function Dashboard({ navigate }) {
+  const [period, setPeriod] = useState('30');
   return (
     <div className="fade-in">
       {/* DESKTOP HEADER */}
@@ -16,7 +27,7 @@ export default function Dashboard({ navigate }) {
           breadcrumb="VUE PAR BOUTIQUE"
           title="Tableau de bord"
           searchPlaceholder="Rechercher..."
-          filters={<HeaderFilter>30 jours ▾</HeaderFilter>}
+          filters={<HeaderFilter value={period} onChange={setPeriod} options={PERIOD_OPTIONS} />}
           actionLabel="Commande"
           onAction={() => navigate('orders')}
         />
@@ -70,11 +81,13 @@ export default function Dashboard({ navigate }) {
         <div>
           <div className="flex items-center justify-between mb-2 px-1">
             <div className="text-[10px] tracking-[0.14em] text-muted uppercase">En direct</div>
-            <button className="text-[11px] text-brick-500">tout voir →</button>
+            <button onClick={() => navigate('orders')} className="text-[11px] text-brick-500">tout voir →</button>
           </div>
           <ul className="space-y-0.5">
             {recentActivity.slice(0, 5).map((act, i) => (
-              <li key={i} className="flex items-center gap-3 px-2 py-2.5">
+              <li key={i}
+                onClick={() => navigate(act.kind === 'invoice' ? 'invoices' : act.kind === 'transfer' ? 'boutiques' : act.kind === 'alert' ? 'stock' : 'orders')}
+                className="flex items-center gap-3 px-2 py-2.5 active:bg-brick-50/40 rounded-lg cursor-pointer">
                 <div className="text-xs tabular-nums text-muted w-12">{act.time}</div>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm text-ink truncate">{act.label}</div>
@@ -113,7 +126,7 @@ export default function Dashboard({ navigate }) {
             <CardHeader
               title="Performance par boutique"
               subtitle="CA, tendance 7 jours, stock"
-              action={<a className="text-xs text-brick-500 hover:underline cursor-pointer">voir tout →</a>}
+              action={<button onClick={() => navigate('boutiques')} className="text-xs text-brick-500 hover:underline cursor-pointer">voir tout →</button>}
             />
             <div className="px-5 pb-4">
               <div className="grid grid-cols-12 gap-3 px-2 py-2 text-[10px] tracking-[0.1em] uppercase text-muted border-b border-line/70">
@@ -124,7 +137,9 @@ export default function Dashboard({ navigate }) {
                 <div className="col-span-2 text-right">Alerte</div>
               </div>
               {shopPerformance.map((row) => (
-                <div key={row.shop} className="grid grid-cols-12 gap-3 px-2 py-3 items-center text-sm border-b border-line/40 last:border-0 hover:bg-brick-50/30 cursor-pointer rounded">
+                <div key={row.shop}
+                  onClick={() => navigate('boutiques')}
+                  className="grid grid-cols-12 gap-3 px-2 py-3 items-center text-sm border-b border-line/40 last:border-0 hover:bg-brick-50/30 cursor-pointer rounded">
                   <div className="col-span-3 font-medium text-ink">{row.shop}</div>
                   <div className="col-span-2 text-right tabular-nums">{fmtFcfa(row.ca)}</div>
                   <div className="col-span-3"><MiniBars values={row.bars} color="#0D5C2E" /></div>
@@ -150,7 +165,9 @@ export default function Dashboard({ navigate }) {
             <CardHeader title="Alertes stock" subtitle={`${stockAlerts.length} produits`} action={<Badge tone="danger">à traiter</Badge>} />
             <ul className="px-2 pb-3">
               {stockAlerts.map((a, i) => (
-                <li key={i} className="flex items-center gap-3 px-3 py-2.5 hover:bg-bone/60 rounded-lg cursor-pointer">
+                <li key={i}
+                  onClick={() => navigate('stock')}
+                  className="flex items-center gap-3 px-3 py-2.5 hover:bg-bone/60 rounded-lg cursor-pointer">
                   <div className={`w-1 h-7 rounded-full ${a.level === 'rupture' ? 'bg-rose-500' : 'bg-amber-400'}`} />
                   <div className="flex-1 min-w-0">
                     <div className="text-sm text-ink truncate">{a.product}</div>
@@ -172,7 +189,9 @@ export default function Dashboard({ navigate }) {
             <CardHeader title="Activités récentes" subtitle="Aujourd'hui · toutes boutiques" />
             <ul className="px-2 pb-3">
               {recentActivity.map((act, i) => (
-                <li key={i} className="flex items-center gap-4 px-3 py-2.5 hover:bg-bone/60 rounded-lg">
+                <li key={i}
+                  onClick={() => navigate(act.kind === 'invoice' ? 'invoices' : act.kind === 'transfer' ? 'boutiques' : act.kind === 'alert' ? 'stock' : 'orders')}
+                  className="flex items-center gap-4 px-3 py-2.5 hover:bg-bone/60 rounded-lg cursor-pointer">
                   <div className="text-xs tabular-nums text-muted w-12">{act.time}</div>
                   <div className={`w-1.5 h-1.5 rounded-full ${
                     act.kind === 'alert' ? 'bg-amber-500' :
@@ -199,7 +218,14 @@ export default function Dashboard({ navigate }) {
             <CardHeader title="Tâches à faire" subtitle={`${tasks.length} en attente`} />
             <ul className="px-3 pb-4 space-y-1.5">
               {tasks.map((t, i) => (
-                <li key={i} className="flex items-start gap-3 px-2 py-2.5 rounded-lg hover:bg-brick-50/40 cursor-pointer transition-colors">
+                <li key={i}
+                  onClick={() => {
+                    const map = { RB: 'invoices', CMD: 'orders', INV: 'stock', CR: 'invoices' };
+                    const dest = map[t.code] || 'dashboard';
+                    navigate(dest);
+                    toast.info(`${t.label}`, { duration: 2200 });
+                  }}
+                  className="flex items-start gap-3 px-2 py-2.5 rounded-lg hover:bg-brick-50/40 cursor-pointer transition-colors">
                   <div className="w-8 h-8 rounded-md bg-brick-50 text-brick-600 grid place-items-center text-[10px] font-bold tracking-wide shrink-0">
                     {t.code}
                   </div>

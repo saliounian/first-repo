@@ -1,15 +1,27 @@
 import { useState } from 'react';
-import { ChevronRight, Bell, ArrowLeft, Phone, MapPin, Calendar, ShoppingCart, FileText, Search, Plus } from 'lucide-react';
+import { ChevronRight, Bell, ArrowLeft, Phone, MapPin, Calendar, ShoppingCart, FileText, Search, Plus, X, CheckCircle } from 'lucide-react';
 import PageHeader, { HeaderFilter } from '../components/PageHeader.jsx';
 import MobileTopBar from '../components/MobileTopBar.jsx';
 import { Card, CardHeader, KpiCard, Badge, StatusBadge, Tabs } from '../components/ui.jsx';
-import { clients, clientKPIs, clientHistory } from '../data/mockData.js';
+import { clients as initialClients, clientKPIs, clientHistory } from '../data/mockData.js';
 import { fmtFcfa } from '../utils/format.js';
+import { usePersistedState } from '../utils/usePersistedState.js';
+import { toast } from '../utils/toast.jsx';
 
 export default function Clients() {
-  const [tab, setTab] = useState('all');
+  const [clients, setClients]   = usePersistedState('gestcopta:clients', initialClients);
+  const [tab, setTab]           = useState('all');
   const [selected, setSelected] = useState(null);
-  const [search, setSearch] = useState('');
+  const [search, setSearch]     = useState('');
+  const [modal, setModal]       = useState(null); // null | 'add' | clientObj
+
+  function saveClient(c) {
+    setClients(prev => {
+      const i = prev.findIndex(x => x.id === c.id);
+      if (i >= 0) { const n = [...prev]; n[i] = c; return n; }
+      return [c, ...prev];
+    });
+  }
 
   const tabs = [
     { id: 'all',      label: 'Tous',      count: clients.length },
@@ -34,9 +46,19 @@ export default function Clients() {
           breadcrumb="CLIENTS"
           title="Registre clients"
           searchPlaceholder="Nom, téléphone..."
+          searchValue={search}
+          onSearchChange={setSearch}
           actionLabel="Nouveau client"
+          onAction={() => setModal('add')}
         />
       </div>
+      {modal !== null && (
+        <ClientModal
+          client={modal === 'add' ? null : modal}
+          onClose={() => setModal(null)}
+          onSave={saveClient}
+        />
+      )}
       <MobileTopBar alerts={3} subtitle="CLIENTS" />
 
       <div className="px-4 lg:px-8 py-5 space-y-5">
@@ -59,7 +81,8 @@ export default function Clients() {
               className="w-full pl-8 pr-3 py-2.5 text-sm bg-surface border border-line/70 rounded-xl focus:outline-none focus:border-brick-300"
             />
           </div>
-          <button className="w-10 h-10 grid place-items-center bg-brick-500 text-white rounded-xl shrink-0">
+          <button onClick={() => setModal('add')}
+            className="w-10 h-10 grid place-items-center bg-brick-500 hover:bg-brick-600 text-white rounded-xl shrink-0 active:scale-95 transition-transform">
             <Plus size={16} />
           </button>
         </div>
@@ -139,7 +162,9 @@ export default function Clients() {
 
           {filtered.length < clients.length && (
             <div className="px-4 lg:px-5 py-3 text-xs text-center border-t border-line/70">
-              <button className="text-brick-500 hover:underline">+ {clients.length - filtered.length} autres clients</button>
+              <button onClick={() => { setTab('all'); setSearch(''); }} className="text-brick-500 hover:underline">
+                + {clients.length - filtered.length} autres clients
+              </button>
             </div>
           )}
         </Card>
@@ -167,15 +192,20 @@ function ClientDetail({ client, onBack }) {
           searchPlaceholder={null}
           rightExtras={
             <>
-              <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-line/70 rounded-lg hover:bg-surface">
+              <button
+                onClick={() => toast.success(`SMS envoyé à ${client.name} (${client.phone})`)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-line/70 rounded-lg hover:bg-surface">
                 <Bell size={13} /> Notifier
               </button>
-              <button className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-line/70 rounded-lg hover:bg-surface">
+              <button
+                onClick={() => toast.info(`Commande pré-remplie pour ${client.name}`)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-line/70 rounded-lg hover:bg-surface">
                 <ShoppingCart size={13} /> Commande
               </button>
             </>
           }
           actionLabel="Facture"
+          onAction={() => toast.info(`Facture initialisée pour ${client.name}`)}
         />
       </div>
 
@@ -191,13 +221,19 @@ function ClientDetail({ client, onBack }) {
 
       {/* Mobile quick actions */}
       <div className="lg:hidden px-4 py-3 flex items-center gap-2 border-b border-line/60 bg-surface">
-        <button className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm bg-brick-500 text-white font-medium rounded-xl">
+        <button
+          onClick={() => toast.info(`Commande pré-remplie pour ${client.name}`)}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm bg-brick-500 hover:bg-brick-600 text-white font-medium rounded-xl active:scale-95 transition-transform">
           <ShoppingCart size={14} /> Commande
         </button>
-        <button className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm border border-line/70 rounded-xl text-ink/80">
+        <button
+          onClick={() => toast.info(`Facture initialisée pour ${client.name}`)}
+          className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm border border-line/70 rounded-xl text-ink/80 active:scale-95 transition-transform">
           <FileText size={14} /> Facture
         </button>
-        <button className="w-10 h-10 grid place-items-center border border-line/70 rounded-xl text-muted shrink-0">
+        <button
+          onClick={() => toast.success(`SMS envoyé à ${client.name}`)}
+          className="w-10 h-10 grid place-items-center border border-line/70 rounded-xl text-muted shrink-0 active:scale-95 transition-transform">
           <Bell size={15} />
         </button>
       </div>
@@ -301,6 +337,113 @@ function Hab({ label, value }) {
     <div>
       <div className="text-[10px] uppercase tracking-wider text-muted mb-0.5">{label}</div>
       <div className="text-ink/85">{value}</div>
+    </div>
+  );
+}
+
+// ===================================================================
+// NEW / EDIT CLIENT MODAL
+// ===================================================================
+function ClientModal({ client, onClose, onSave }) {
+  const isEdit = !!client;
+  const [f, setF] = useState({
+    name:    client?.name    || '',
+    phone:   client?.phone   || '',
+    type:    client?.type    || 'régulier',
+    favShop: client?.favShop || 'plateau',
+    orders:  client?.orders  || 0,
+    total:   client?.total   || 0,
+    last:    client?.last    || 'aujourd\'hui',
+  });
+  const [done, setDone] = useState(false);
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+
+  function submit() {
+    if (!f.name.trim()) { toast.error('Nom requis'); return; }
+    onSave({
+      id: client?.id || `c${Date.now()}`,
+      ...f,
+      orders: +f.orders || 0,
+      total:  +f.total  || 0,
+    });
+    setDone(true);
+    setTimeout(() => { setDone(false); onClose(); }, 900);
+  }
+
+  if (done) return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+      <div className="bg-surface rounded-2xl p-8 text-center shadow-xl">
+        <CheckCircle size={44} className="text-brick-500 mx-auto mb-2" />
+        <div className="font-semibold text-ink">{isEdit ? 'Client modifié' : 'Client ajouté'}</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center bg-black/50 backdrop-blur-sm slide-in lg:p-4" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-surface w-full lg:rounded-2xl lg:max-w-md lg:shadow-pop h-full lg:h-auto lg:max-h-[90vh] overflow-y-auto flex flex-col">
+        {/* Mobile header */}
+        <div className="lg:hidden px-4 pt-4 pb-3 flex items-center gap-3 border-b border-line/60">
+          <button onClick={onClose} className="w-8 h-8 grid place-items-center -ml-1"><ArrowLeft size={18} /></button>
+          <div className="font-semibold text-ink">{isEdit ? 'Modifier client' : 'Nouveau client'}</div>
+        </div>
+        {/* Desktop header */}
+        <div className="hidden lg:flex px-5 pt-5 pb-4 items-center justify-between border-b border-line/60">
+          <div className="font-semibold text-ink text-lg">{isEdit ? 'Modifier client' : 'Nouveau client'}</div>
+          <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-sand text-muted"><X size={15} /></button>
+        </div>
+
+        <div className="flex-1 px-5 py-4 space-y-3">
+          <div>
+            <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Nom complet *</label>
+            <input value={f.name} onChange={e => set('name', e.target.value)} placeholder="Prénom Nom ou Raison sociale" className="field-input" />
+          </div>
+          <div>
+            <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Téléphone</label>
+            <input value={f.phone} onChange={e => set('phone', e.target.value)} placeholder="+221 77 …" className="field-input tabular-nums" />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Type</label>
+              <select value={f.type} onChange={e => set('type', e.target.value)} className="field-input">
+                <option value="régulier">Régulier</option>
+                <option value="pro">Pro</option>
+                <option value="nouveau">Nouveau</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Boutique favorite</label>
+              <select value={f.favShop} onChange={e => set('favShop', e.target.value)} className="field-input">
+                <option value="plateau">Plateau</option>
+                <option value="almadies">Almadies</option>
+                <option value="yoff">Yoff</option>
+                <option value="liberte6">Liberté 6</option>
+                <option value="autre">Autre</option>
+              </select>
+            </div>
+          </div>
+          {isEdit && (
+            <div className="grid grid-cols-2 gap-3 border-t border-line/50 pt-3">
+              <div>
+                <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Cmds</label>
+                <input type="number" min="0" value={f.orders} onChange={e => set('orders', e.target.value)} className="field-input" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Total (FCFA)</label>
+                <input type="number" min="0" value={f.total} onChange={e => set('total', e.target.value)} className="field-input" />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="px-5 py-4 border-t border-line/60 flex items-center justify-end gap-2 bg-surface">
+          <button onClick={onClose} className="px-4 py-2 text-sm border border-line/70 rounded-lg hover:bg-bone">Annuler</button>
+          <button onClick={submit} disabled={!f.name.trim()}
+            className="px-5 py-2.5 bg-brick-500 hover:bg-brick-600 disabled:opacity-40 text-white text-sm font-semibold rounded-lg">
+            {isEdit ? 'Enregistrer' : 'Ajouter'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

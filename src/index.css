@@ -39,6 +39,7 @@ html, body {
 }
 body {
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-size: 15.5px;
   -webkit-font-smoothing: antialiased;
   font-feature-settings: 'cv11', 'ss01', 'ss03';
   transition: background-color .25s ease, color .25s ease;
@@ -63,17 +64,23 @@ body {
 /* ===================== Form utility ===================== */
 .field-input {
   width: 100%;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.875rem;
+  padding: 0.7rem 0.95rem;
+  font-size: 0.95rem;
+  line-height: 1.35;
   border: 1px solid rgb(var(--c-line) / 0.7);
-  border-radius: 0.5rem;
+  border-radius: 0.65rem;
   background: rgb(var(--c-surface) / 1);
   color: rgb(var(--c-ink) / 1);
   transition: border-color .15s ease, box-shadow .15s ease;
 }
+.field-input::placeholder { color: rgb(var(--c-muted) / 0.85); }
 .field-input:focus {
   outline: none;
   border-color: rgb(var(--c-brick-500) / 1);
-  box-shadow: 0 0 0 3px rgb(var(--c-brick-500) / 0.08);
+  box-shadow: 0 0 0 3px rgb(var(--c-brick-500) / 0.10);
 }
 .field-input option { background: rgb(var(--c-surface) / 1); }
+
+/* Slightly larger default headings & nav labels for readability */
+h1, h2, h3 { letter-spacing: -0.01em; }
+button, input, select, textarea { font-family: inherit; }
