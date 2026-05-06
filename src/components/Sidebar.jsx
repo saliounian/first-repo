@@ -94,15 +94,24 @@ export default function Sidebar({ route, setRoute }) {
 
       {/* User + Logout */}
       <div className="px-3 pb-4 pt-1 space-y-1">
-        <div className="flex items-center gap-3 px-2.5 py-2.5">
+        <button
+          onClick={() => user?.role === 'admin' && setRoute('admin')}
+          disabled={user?.role !== 'admin'}
+          title={user?.role === 'admin' ? 'Gérer les utilisateurs' : ''}
+          className={`w-full flex items-center gap-3 px-2.5 py-2.5 rounded-lg transition-colors text-left ${
+            user?.role === 'admin'
+              ? (route === 'admin' ? 'bg-surface' : 'hover:bg-surface/60 cursor-pointer')
+              : 'cursor-default'
+          }`}
+        >
           <div className="w-10 h-10 rounded-full bg-brick-500/95 text-white grid place-items-center text-sm font-semibold shrink-0">
             {initials}
           </div>
-          <div className="text-left flex-1 min-w-0">
+          <div className="flex-1 min-w-0">
             <div className="text-[15px] font-medium text-ink truncate">{user?.nom || '—'}</div>
             <div className="text-xs text-muted">{ROLE_DISPLAY[user?.role] || user?.role}</div>
           </div>
-        </div>
+        </button>
         <button
           onClick={logout}
           className="w-full flex items-center gap-3 px-2.5 py-2 rounded-lg text-[15px] text-muted hover:text-rose-600 hover:bg-rose-50/60 transition-colors"

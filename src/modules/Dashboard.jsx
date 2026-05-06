@@ -1,258 +1,137 @@
-import { useState } from 'react';
-import { ShoppingCart, ArrowLeftRight, FileText, Search, AlertTriangle, ChevronRight } from 'lucide-react';
-import PageHeader, { HeaderFilter } from '../components/PageHeader.jsx';
+import { ShoppingCart, Users, Package, Store, ArrowRight } from 'lucide-react';
 import MobileTopBar from '../components/MobileTopBar.jsx';
-import { Card, CardHeader, KpiCard, Badge, MiniBars, Progress, LineChart } from '../components/ui.jsx';
-import {
-  dashboardKPIs, shopPerformance, stockAlerts, recentActivity, tasks, revenueCurve
-} from '../data/mockData.js';
+import PageHeader from '../components/PageHeader.jsx';
+import { Card, KpiCard } from '../components/ui.jsx';
+import { useStore } from '../context/StoreContext.jsx';
 import { fmtFcfa } from '../utils/format.js';
-import { toast } from '../utils/toast.jsx';
-
-const PERIOD_OPTIONS = [
-  { value: '7',  label: '7 derniers jours' },
-  { value: '30', label: '30 derniers jours' },
-  { value: '90', label: '90 derniers jours' },
-  { value: 'mtd', label: 'Mois en cours' },
-  { value: 'ytd', label: 'Année en cours' },
-];
 
 export default function Dashboard({ navigate }) {
-  const [period, setPeriod] = useState('30');
+  const { shops, products, clients, orders, stockPoints, totalStockForProduct } = useStore();
+
+  const totalStock   = products.reduce((s, p) => s + totalStockForProduct(p.id), 0);
+  const pending      = orders.filter(o => o.status === 'attente').length;
+  const todayOrders  = orders.filter(o => o.createdAt?.startsWith(new Date().toISOString().slice(0, 10)));
+  const todayCA      = todayOrders.reduce((s, o) => s + (o.total || 0), 0);
+  const recentOrders = [...orders].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || '')).slice(0, 5);
+
+  const shortcuts = [
+    { label: '+ Commande', sub: 'Saisir', icon: ShoppingCart, action: () => navigate('orders') },
+    { label: 'Clients',    sub: 'Gérer',  icon: Users,        action: () => navigate('clients') },
+    { label: 'Boutiques',  sub: 'Gérer',  icon: Store,        action: () => navigate('boutiques') },
+    { label: 'Stock',      sub: 'Voir',   icon: Package,      action: () => navigate('stock') },
+  ];
+
   return (
     <div className="fade-in">
-      {/* DESKTOP HEADER */}
       <div className="hidden lg:block">
-        <PageHeader
-          breadcrumb="VUE PAR BOUTIQUE"
-          title="Tableau de bord"
-          searchPlaceholder="Rechercher..."
-          filters={<HeaderFilter value={period} onChange={setPeriod} options={PERIOD_OPTIONS} />}
-          actionLabel="Commande"
-          onAction={() => navigate('orders')}
-        />
+        <PageHeader breadcrumb="TABLEAU DE BORD" title="Tableau de bord"/>
       </div>
+      <MobileTopBar subtitle="TABLEAU DE BORD"/>
 
-      {/* MOBILE HEADER */}
-      <MobileTopBar alerts={3} />
-
-      {/* ====================== MOBILE LAYOUT ====================== */}
-      <div className="lg:hidden px-4 pb-6 space-y-4">
-        {/* Featured CA card */}
-        <div className="bg-brick-50/70 border border-brick-100 rounded-2xl p-4">
-          <div className="flex items-start justify-between">
-            <div>
-              <div className="text-[10px] tracking-[0.16em] text-muted uppercase">CA aujourd'hui</div>
-              <div className="text-[42px] leading-none font-semibold tabular-nums text-brick-600 mt-1">
-                {fmtFcfa(184_000)}
-              </div>
-              <div className="text-[11px] text-brick-500 font-medium mt-1.5">+18% vs hier · 32 cmds</div>
-            </div>
-          </div>
-          <div className="-mx-1 -mb-1 mt-2 h-16">
-            <LineChart data={revenueCurve} height={70} compact />
-          </div>
-        </div>
-
-        {/* Mini KPIs */}
-        <div className="grid grid-cols-2 gap-3">
-          <Card className="px-4 py-3">
-            <div className="text-[10px] tracking-[0.14em] text-muted uppercase">cmds attente</div>
-            <div className="text-2xl font-semibold tabular-nums text-ink mt-1">12</div>
-          </Card>
-          <Card className="px-4 py-3">
-            <div className="text-[10px] tracking-[0.14em] text-muted uppercase">stock alertes</div>
-            <div className="text-2xl font-semibold tabular-nums text-ink mt-1">30</div>
-          </Card>
+      <div className="px-4 lg:px-8 py-5 space-y-5">
+        {/* KPIs */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <KpiCard label="CA aujourd'hui"  value={fmtFcfa(todayCA)}   accent large/>
+          <KpiCard label="Cmds en attente" value={pending}            delta={pending > 0 ? 'À traiter' : 'Aucune'} deltaTone={pending > 0 ? 'neg' : 'pos'}/>
+          <KpiCard label="Unités en stock" value={totalStock.toLocaleString('fr-FR')}/>
+          <KpiCard label="Clients"         value={clients.length}/>
         </div>
 
         {/* Raccourcis */}
         <div>
-          <div className="text-[10px] tracking-[0.14em] text-muted uppercase mb-2 px-1">Raccourcis</div>
-          <div className="grid grid-cols-2 gap-3">
-            <ShortcutBtn icon={ShoppingCart}  title="+ Commande"  hint="Nom + tel"   onClick={() => navigate('orders')} />
-            <ShortcutBtn icon={ArrowLeftRight} title="→ Transfert" hint="Stock"      onClick={() => navigate('stock')} />
-            <ShortcutBtn icon={FileText}      title="≡ Facture"    hint="Émettre"    onClick={() => navigate('invoices')} />
-            <ShortcutBtn icon={Search}        title="○ Client"     hint="Rechercher" onClick={() => navigate('clients')} />
-          </div>
-        </div>
-
-        {/* En direct */}
-        <div>
-          <div className="flex items-center justify-between mb-2 px-1">
-            <div className="text-[10px] tracking-[0.14em] text-muted uppercase">En direct</div>
-            <button onClick={() => navigate('orders')} className="text-[11px] text-brick-500">tout voir →</button>
-          </div>
-          <ul className="space-y-0.5">
-            {recentActivity.slice(0, 5).map((act, i) => (
-              <li key={i}
-                onClick={() => navigate(act.kind === 'invoice' ? 'invoices' : act.kind === 'transfer' ? 'boutiques' : act.kind === 'alert' ? 'stock' : 'orders')}
-                className="flex items-center gap-3 px-2 py-2.5 active:bg-brick-50/40 rounded-lg cursor-pointer">
-                <div className="text-xs tabular-nums text-muted w-12">{act.time}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm text-ink truncate">{act.label}</div>
+          <div className="text-[10px] tracking-[0.14em] text-muted uppercase mb-2">Raccourcis</div>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {shortcuts.map(({ label, sub, icon: Icon, action }) => (
+              <button key={label} onClick={action}
+                className="bg-surface border border-line/70 rounded-xl px-4 py-3.5 text-left hover:bg-bone/80 transition-colors flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-brick-50 grid place-items-center shrink-0">
+                  <Icon size={16} className="text-brick-500"/>
                 </div>
-                <div className={`text-sm font-medium tabular-nums ${
-                  act.delta?.startsWith('−') ? 'text-amber-600' :
-                  act.kind === 'alert' ? 'text-amber-600' : 'text-brick-500'
-                }`}>
-                  {act.kind === 'alert' ? <AlertTriangle size={14} /> : act.delta}
+                <div>
+                  <div className="font-medium text-sm text-ink">{label}</div>
+                  <div className="text-xs text-muted">{sub}</div>
                 </div>
-              </li>
+              </button>
             ))}
-          </ul>
-        </div>
-      </div>
-
-      {/* ====================== DESKTOP LAYOUT ====================== */}
-      <div className="hidden lg:block px-8 py-6 space-y-6">
-        <div className="grid grid-cols-4 gap-4">
-          <KpiCard
-            label="CA du mois"
-            value={fmtFcfa(dashboardKPIs.caMonth)}
-            delta={dashboardKPIs.caMonthDelta}
-            sublabel="vs mois préc."
-            accent
-            large
-          />
-          <KpiCard label="Commandes" value={dashboardKPIs.orders} delta={dashboardKPIs.ordersDelta} sublabel="cette sem." />
-          <KpiCard label="Stock global" value={`${dashboardKPIs.stockGlobal}%`} delta={dashboardKPIs.stockDelta} sublabel="vs sem. dern." />
-          <KpiCard label="Alertes" value={dashboardKPIs.alerts} delta={dashboardKPIs.alertsDelta} deltaTone="neg" sublabel="à traiter" />
+          </div>
         </div>
 
-        {/* Performance + side panels */}
-        <div className="grid grid-cols-3 gap-6">
-          <Card className="col-span-2">
-            <CardHeader
-              title="Performance par boutique"
-              subtitle="CA, tendance 7 jours, stock"
-              action={<button onClick={() => navigate('boutiques')} className="text-xs text-brick-500 hover:underline cursor-pointer">voir tout →</button>}
-            />
-            <div className="px-5 pb-4">
-              <div className="grid grid-cols-12 gap-3 px-2 py-2 text-[10px] tracking-[0.1em] uppercase text-muted border-b border-line/70">
-                <div className="col-span-3">Boutique</div>
-                <div className="col-span-2 text-right">CA</div>
-                <div className="col-span-3">Tendance</div>
-                <div className="col-span-2 text-right">Stock</div>
-                <div className="col-span-2 text-right">Alerte</div>
-              </div>
-              {shopPerformance.map((row) => (
-                <div key={row.shop}
-                  onClick={() => navigate('boutiques')}
-                  className="grid grid-cols-12 gap-3 px-2 py-3 items-center text-sm border-b border-line/40 last:border-0 hover:bg-brick-50/30 cursor-pointer rounded">
-                  <div className="col-span-3 font-medium text-ink">{row.shop}</div>
-                  <div className="col-span-2 text-right tabular-nums">{fmtFcfa(row.ca)}</div>
-                  <div className="col-span-3"><MiniBars values={row.bars} color="#0D5C2E" /></div>
-                  <div className="col-span-2 text-right">
-                    <div className="inline-flex items-center gap-2 w-full max-w-[120px] ml-auto">
-                      <div className="flex-1"><Progress value={row.stock} /></div>
-                      <span className="text-xs tabular-nums text-muted w-7">{row.stock}%</span>
-                    </div>
-                  </div>
-                  <div className="col-span-2 text-right">
-                    {row.alert > 0 ? (
-                      <Badge tone={row.alert > 4 ? 'danger' : 'warning'}>{row.alert}</Badge>
-                    ) : (
-                      <Badge tone="success">ok</Badge>
-                    )}
-                  </div>
-                </div>
-              ))}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Commandes récentes */}
+          <Card>
+            <div className="px-5 pt-4 pb-3 flex items-center justify-between">
+              <div className="text-sm font-semibold text-ink">Commandes récentes</div>
+              <button onClick={() => navigate('orders')} className="text-xs text-brick-500 hover:underline flex items-center gap-1">
+                Toutes <ArrowRight size={11}/>
+              </button>
             </div>
+            {recentOrders.length === 0 ? (
+              <div className="px-5 pb-5 text-sm text-muted">Aucune commande.</div>
+            ) : (
+              <ul className="divide-y divide-line/40">
+                {recentOrders.map(o => (
+                  <li key={o.id} className="px-5 py-2.5 flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-ink">{o.client}</div>
+                      <div className="text-xs text-muted">{o.shop || '—'} · {o.date}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-semibold tabular-nums">{fmtFcfa(o.total || 0)}</div>
+                      <div className={`text-[10px] font-medium ${
+                        o.status === 'livrée' ? 'text-brick-600' : o.status === 'annulée' ? 'text-rose-500' : 'text-amber-600'
+                      }`}>{o.status}</div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
 
+          {/* Résumé boutiques */}
           <Card>
-            <CardHeader title="Alertes stock" subtitle={`${stockAlerts.length} produits`} action={<Badge tone="danger">à traiter</Badge>} />
-            <ul className="px-2 pb-3">
-              {stockAlerts.map((a, i) => (
-                <li key={i}
-                  onClick={() => navigate('stock')}
-                  className="flex items-center gap-3 px-3 py-2.5 hover:bg-bone/60 rounded-lg cursor-pointer">
-                  <div className={`w-1 h-7 rounded-full ${a.level === 'rupture' ? 'bg-rose-500' : 'bg-amber-400'}`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-ink truncate">{a.product}</div>
-                    <div className="text-[11px] text-muted">{a.shop}</div>
-                  </div>
-                  <Badge tone={a.level === 'rupture' ? 'danger' : 'warning'}>{a.level}</Badge>
-                </li>
-              ))}
-            </ul>
-            <button onClick={() => navigate('stock')} className="w-full py-2.5 text-sm text-brick-500 hover:bg-brick-50/60 transition-colors border-t border-line/60">
-              voir tout le stock →
-            </button>
+            <div className="px-5 pt-4 pb-3 flex items-center justify-between">
+              <div className="text-sm font-semibold text-ink">Boutiques</div>
+              <button onClick={() => navigate('boutiques')} className="text-xs text-brick-500 hover:underline flex items-center gap-1">
+                Gérer <ArrowRight size={11}/>
+              </button>
+            </div>
+            {shops.length === 0 ? (
+              <div className="px-5 pb-5 space-y-2">
+                <div className="text-sm text-muted">Aucune boutique créée.</div>
+                <button onClick={() => navigate('boutiques')} className="text-xs text-brick-500 hover:underline">
+                  Créer ma première boutique →
+                </button>
+              </div>
+            ) : (
+              <ul className="divide-y divide-line/40">
+                {shops.map(s => (
+                  <li key={s.id} className="px-5 py-2.5 flex items-center justify-between">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-2.5 h-2.5 rounded-full" style={{ background: s.color }}/>
+                      <span className="font-medium text-sm text-ink">{s.name}</span>
+                    </div>
+                    <div className="text-xs text-muted">{stockPoints.filter(sp => sp.shopId === s.id).length} point(s)</div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
         </div>
 
-        {/* Activity + tasks */}
-        <div className="grid grid-cols-3 gap-6">
-          <Card className="col-span-2">
-            <CardHeader title="Activités récentes" subtitle="Aujourd'hui · toutes boutiques" />
-            <ul className="px-2 pb-3">
-              {recentActivity.map((act, i) => (
-                <li key={i}
-                  onClick={() => navigate(act.kind === 'invoice' ? 'invoices' : act.kind === 'transfer' ? 'boutiques' : act.kind === 'alert' ? 'stock' : 'orders')}
-                  className="flex items-center gap-4 px-3 py-2.5 hover:bg-bone/60 rounded-lg cursor-pointer">
-                  <div className="text-xs tabular-nums text-muted w-12">{act.time}</div>
-                  <div className={`w-1.5 h-1.5 rounded-full ${
-                    act.kind === 'alert' ? 'bg-amber-500' :
-                    act.kind === 'pending' ? 'bg-amber-500' :
-                    act.kind === 'invoice' ? 'bg-blue-500' :
-                    act.kind === 'transfer' ? 'bg-violet-500' : 'bg-brick-500'
-                  }`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-ink">{act.label}</div>
-                    <div className="text-[11px] text-muted">{act.detail}</div>
-                  </div>
-                  <div className={`text-sm font-medium tabular-nums ${
-                    act.delta?.startsWith('−') ? 'text-amber-600' :
-                    act.kind === 'alert' ? 'text-amber-600' : 'text-brick-500'
-                  }`}>
-                    {act.delta}
-                  </div>
-                </li>
-              ))}
-            </ul>
+        {/* Setup guide si vide */}
+        {shops.length === 0 && clients.length === 0 && orders.length === 0 && (
+          <Card className="px-5 py-6">
+            <div className="text-sm font-semibold text-ink mb-3">🚀 Démarrage rapide</div>
+            <ol className="space-y-2 text-sm text-muted list-decimal list-inside">
+              <li><button onClick={() => navigate('boutiques')} className="text-brick-500 hover:underline">Créer vos boutiques</button></li>
+              <li><button onClick={() => navigate('pointdestock')} className="text-brick-500 hover:underline">Ajouter des points de stock</button></li>
+              <li><button onClick={() => navigate('stock')} className="text-brick-500 hover:underline">Enregistrer vos produits</button></li>
+              <li><button onClick={() => navigate('clients')} className="text-brick-500 hover:underline">Ajouter vos clients</button></li>
+              <li><button onClick={() => navigate('orders')} className="text-brick-500 hover:underline">Créer votre première commande</button></li>
+            </ol>
           </Card>
-
-          <Card>
-            <CardHeader title="Tâches à faire" subtitle={`${tasks.length} en attente`} />
-            <ul className="px-3 pb-4 space-y-1.5">
-              {tasks.map((t, i) => (
-                <li key={i}
-                  onClick={() => {
-                    const map = { RB: 'invoices', CMD: 'orders', INV: 'stock', CR: 'invoices' };
-                    const dest = map[t.code] || 'dashboard';
-                    navigate(dest);
-                    toast.info(`${t.label}`, { duration: 2200 });
-                  }}
-                  className="flex items-start gap-3 px-2 py-2.5 rounded-lg hover:bg-brick-50/40 cursor-pointer transition-colors">
-                  <div className="w-8 h-8 rounded-md bg-brick-50 text-brick-600 grid place-items-center text-[10px] font-bold tracking-wide shrink-0">
-                    {t.code}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm text-ink/90 leading-tight">{t.label}</div>
-                    <div className="text-[11px] text-muted mt-0.5">{t.hint}</div>
-                  </div>
-                  <ChevronRight size={14} className="text-muted shrink-0 mt-1" />
-                </li>
-              ))}
-            </ul>
-          </Card>
-        </div>
+        )}
       </div>
     </div>
-  );
-}
-
-function ShortcutBtn({ icon: Icon, title, hint, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex flex-col items-start gap-1 p-4 bg-surface border border-line/70 rounded-xl text-left hover:border-brick-200 active:bg-brick-50/40 transition-colors"
-    >
-      <Icon size={16} className="text-brick-500 mb-1" strokeWidth={1.8} />
-      <div className="text-sm font-medium text-ink">{title}</div>
-      <div className="text-[11px] text-muted">{hint}</div>
-    </button>
   );
 }

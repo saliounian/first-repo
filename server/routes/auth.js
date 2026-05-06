@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import supabase from '../db.js';
-import { requireAuth, getUserPermissions, logActivity, issueToken } from '../middleware/auth.js';
+import { requireAuth, getUserPermissions, getUserShops, logActivity, issueToken } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -36,14 +36,19 @@ router.post('/login', async (req, res) => {
 
   await logActivity({ userId: user.id, userNom: user.nom, userEmail: user.email, action: 'Connexion réussie', module: 'auth', resultat: 'succes' });
 
-  const permissions = await getUserPermissions(user.id);
+  const [permissions, allowedShops] = await Promise.all([
+    getUserPermissions(user.id),
+    getUserShops(user.id),
+  ]);
 
   return res.json({
     user: {
       id: user.id, nom: user.nom, email: user.email,
       role: user.role_nom, statut: user.statut,
       mustChangePassword: user.must_change_password === true,
-      sessionTimeout: user.session_timeout
+      sessionTimeout: user.session_timeout,
+      // [] = toutes boutiques (pas de restriction), sinon liste des IDs autorisés
+      allowedShops,
     },
     permissions
   });
@@ -60,13 +65,17 @@ router.post('/logout', requireAuth, async (req, res) => {
 // ─── GET /api/auth/me ─────────────────────────────────────────────────────────
 router.get('/me', requireAuth, async (req, res) => {
   const u = req.user;
-  const permissions = await getUserPermissions(u.id);
+  const [permissions, allowedShops] = await Promise.all([
+    getUserPermissions(u.id),
+    getUserShops(u.id),
+  ]);
   res.json({
     user: {
       id: u.id, nom: u.nom, email: u.email,
       role: u.role_nom, statut: u.statut,
       mustChangePassword: u.must_change_password === true,
-      sessionTimeout: u.session_timeout
+      sessionTimeout: u.session_timeout,
+      allowedShops,
     },
     permissions
   });

@@ -10,6 +10,24 @@ export async function getUserPermissions(userId) {
   return (data || []).map(p => `${p.module}.${p.action}`);
 }
 
+// ─── getUserShops ─────────────────────────────────────────────────────────────
+// Returns array of shop_ids the user can access.
+// Empty array [] = ALL shops (admin / no restriction set).
+export async function getUserShops(userId) {
+  const { data, error } = await supabase.rpc('get_user_shops', { p_user_id: userId });
+  if (error) { console.error('[getUserShops]', error); return []; }
+  return (data || []).map(r => r.shop_id);
+}
+
+// ─── setUserShops ─────────────────────────────────────────────────────────────
+// Replace shop assignments for a user. Pass [] for "all shops".
+export async function setUserShops(userId, shopIds) {
+  await supabase.from('user_shops').delete().eq('user_id', userId);
+  if (shopIds.length > 0) {
+    await supabase.from('user_shops').insert(shopIds.map(sid => ({ user_id: userId, shop_id: sid })));
+  }
+}
+
 // ─── logActivity ──────────────────────────────────────────────────────────────
 export async function logActivity({ userId, userNom, userEmail, action, module,
   ancienneValeur, nouvelleValeur, resultat = 'succes', raisonEchec }) {

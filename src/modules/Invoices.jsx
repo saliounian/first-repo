@@ -1,114 +1,633 @@
-import { useState, useEffect, useRef } from 'react';
-import { Eye, Download, Send, MoreHorizontal, Plus, X, ArrowLeft, ChevronDown, Trash2, CheckCircle, Edit3 } from 'lucide-react';
-import PageHeader, { HeaderFilter } from '../components/PageHeader.jsx';
+import { useState } from 'react';
+import { Plus, Eye, Download, Trash2, X, CheckCircle, Edit2, FileText, ArrowRight, Share2, MessageCircle, Mail, Link2, Check } from 'lucide-react';
+import PageHeader from '../components/PageHeader.jsx';
 import MobileTopBar from '../components/MobileTopBar.jsx';
-import { Card, KpiCard, StatusBadge, Tabs } from '../components/ui.jsx';
-import { invoices as initialInvoices, invoiceKPIs } from '../data/mockData.js';
-import { fmtFcfa, fmtFcfaFull } from '../utils/format.js';
-import { usePersistedState } from '../utils/usePersistedState.js';
-import { downloadCSV, printHTML, fmtDate } from '../utils/download.js';
+import ActionMenu from '../components/ActionMenu.jsx';
+import { Card, Badge, Tabs } from '../components/ui.jsx';
+import { useStore } from '../context/StoreContext.jsx';
+import { INVOICE_STATUSES, ORDER_STATUSES, uid } from '../data/store.js';
+import { fmtFcfa } from '../utils/format.js';
 import { toast } from '../utils/toast.jsx';
-import { useAuth } from '../context/AuthContext.jsx';
-import PasswordConfirmModal from '../components/PasswordConfirmModal.jsx';
 
-function exportInvoicesCSV(list) {
-  downloadCSV(`factures-${new Date().toISOString().slice(0, 10)}.csv`,
-    ['ID', 'Date', 'Client', 'Échéance', 'Total (FCFA)', 'Statut'],
-    list.map(i => [i.id, i.date, i.client, i.due, i.total, i.status])
-  );
-  toast.success(`${list.length} factures exportées`);
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
-function printInvoice(inv) {
-  const notesBlock = inv.notes
-    ? `<div style="display:flex;justify-content:flex-end;margin-top:24px"><div style="max-width:340px;text-align:right;border-left:3px solid #0d5c2e;padding:8px 12px"><div style="font-size:10px;text-transform:uppercase;letter-spacing:0.12em;color:#7a7e7b;margin-bottom:4px">Notes & observations</div><div style="font-size:13px;line-height:1.5;white-space:pre-wrap">${escapeHtml(inv.notes)}</div></div></div>`
+function calcNet(f) {
+  const base = f.total || 0;
+  const apply = (fr) => fr ? (fr.sens === '+' ? 1 : -1) * (Number(fr.montant) || 0) : 0;
+  return base + apply(f.fraisLivraison) + apply(f.fraisInstallation) + apply(f.fraisService);
+}
+
+// ─── Build invoice HTML (Niansbusines format) ────────────────────────────────
+function buildInvoiceHTML(inv, shop) {
+  const fmt = n => `${Number(n || 0).toLocaleString('fr-FR')}F`;
+
+  const itemsRows = (inv.lineItems?.length ? inv.lineItems : []).map(l => `
+    <tr>
+      <td class="desc">${esc(l.name)}</td>
+      <td class="right">${fmt(l.unitPrice)}</td>
+      <td class="center">${String(l.qty).padStart(2, '0')}</td>
+      <td class="right">${fmt(l.unitPrice * l.qty)}</td>
+    </tr>`).join('');
+
+  const fraisRows = [
+    ['Frais de livraison',    inv.fraisLivraison],
+    ["Frais d'installation",  inv.fraisInstallation],
+    ['Frais de service',      inv.fraisService],
+  ].filter(([, fr]) => fr?.montant).map(([label, fr]) => `
+    <tr>
+      <td class="desc">${label}</td>
+      <td class="right">${fr.sens === '-' ? '−' : ''}${fmt(fr.montant)}</td>
+      <td class="center">01</td>
+      <td class="right">${fr.sens === '-' ? '−' : ''}${fmt(fr.montant)}</td>
+    </tr>`).join('');
+
+  const reductionRow = inv.lineItems?.length === 0 && inv.description
+    ? `<tr><td class="desc">${esc(inv.description)}</td><td class="right">${fmt(inv.total)}</td><td class="center">01</td><td class="right">${fmt(inv.total)}</td></tr>`
     : '';
-  const html = `
-    <div class="header">
-      <div>
-        <div class="brand">gestCopta</div>
-        <h1 style="margin-top:8px">Facture ${inv.id}</h1>
-        <div class="muted">Émise le ${inv.date} · échéance ${inv.due}</div>
-        ${inv.fromOrderId ? `<div class="muted" style="margin-top:4px;font-size:11px">Liée à la commande ${inv.fromOrderId}</div>` : ''}
-      </div>
-      <div class="meta">
-        <span class="badge ${inv.status === 'retard' ? 'danger' : inv.status === 'attente' ? 'warn' : ''}">${inv.status}</span>
+
+  const notesLines = inv.note
+    ? inv.note.split('\n').map(l => `<div class="info-line">${esc(l)}</div>`).join('')
+    : '';
+
+  return `
+    <div class="page">
+      <!-- Top wave -->
+      <svg class="wave-top" viewBox="0 0 800 120" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M0,0 L800,0 L800,80 Q600,120 400,90 Q200,60 0,100 Z" fill="#0d7e4f"/>
+      </svg>
+
+      <main>
+        <header class="head">
+          <div>
+            <h1 class="title">Facture</h1>
+            <div class="invnum">N° : ${esc(inv.id?.replace('#', '') || '—')}</div>
+          </div>
+          <div class="date">DATE : ${esc(inv.date || new Date().toLocaleDateString('fr-FR'))}</div>
+        </header>
+
+        <section class="parties">
+          <div class="party">
+            <div class="party-label">ÉMETTEUR :</div>
+            <div class="party-name">${esc(shop?.name || 'Boutique')}</div>
+            ${shop?.phone ? `<div class="party-info">${esc(shop.phone)}</div>` : ''}
+          </div>
+          <div class="party right-align">
+            <div class="party-label">DESTINATAIRE :</div>
+            <div class="party-name">${esc(inv.client)}</div>
+            ${inv.phone ? `<div class="party-info">${esc(inv.phone)}</div>` : ''}
+            ${inv.adresseLivraison ? `<div class="party-info">${esc(inv.adresseLivraison)}</div>` : ''}
+          </div>
+        </section>
+
+        <table class="items">
+          <thead>
+            <tr>
+              <th>Description :</th>
+              <th class="right">Prix Unitaire :</th>
+              <th class="center">Quantité :</th>
+              <th class="right">Total :</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${itemsRows}
+            ${reductionRow}
+            ${fraisRows}
+          </tbody>
+        </table>
+
+        <section class="footer-section">
+          ${notesLines ? `
+            <div class="info">
+              <div class="info-label">Informations supplémentaire</div>
+              ${notesLines}
+            </div>` : '<div></div>'}
+          <div class="net">
+            <div class="net-label">Net à payer :</div>
+            <div class="net-value">${fmt(inv.net ?? inv.total ?? 0)}</div>
+          </div>
+        </section>
+      </main>
+
+      <!-- Bottom wave -->
+      <svg class="wave-bot" viewBox="0 0 800 120" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M0,40 Q200,0 400,30 Q600,60 800,40 L800,120 L0,120 Z" fill="#0d7e4f"/>
+      </svg>
+    </div>
+  `;
+}
+
+const INVOICE_CSS = `
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Inter,system-ui,'Segoe UI',sans-serif;color:#1f2421;background:#fff;font-size:13px;line-height:1.5}
+  .page{position:relative;width:794px;min-height:1123px;margin:0 auto;background:#fff;overflow:hidden}
+  .wave-top,.wave-bot{position:absolute;left:0;right:0;width:100%;height:120px;display:block}
+  .wave-top{top:0}
+  .wave-bot{bottom:0}
+  main{position:relative;padding:160px 80px 160px}
+  .head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:60px}
+  .title{font-size:42px;font-weight:700;color:#1f2421;letter-spacing:-0.02em}
+  .invnum{font-size:18px;font-weight:600;margin-top:6px;color:#1f2421}
+  .date{font-size:14px;color:#1f2421}
+  .parties{display:flex;justify-content:space-between;margin-bottom:60px;gap:40px}
+  .party{flex:1}
+  .party.right-align{text-align:right}
+  .party-label{font-size:11px;font-weight:700;letter-spacing:0.05em;color:#1f2421;margin-bottom:10px}
+  .party-name{font-size:15px;font-weight:600;color:#0d7e4f;margin-bottom:6px}
+  .party-info{font-size:13px;color:#1f2421;margin-bottom:2px;line-height:1.4}
+  .items{width:100%;border-collapse:collapse;margin-bottom:60px}
+  .items thead th{font-size:12px;font-weight:600;color:#1f2421;padding:14px 8px;border-bottom:1px solid #d4d4d4;text-align:left}
+  .items tbody td{font-size:13px;padding:18px 8px;border-bottom:1px solid #ecebe6;vertical-align:middle}
+  .items td.desc{color:#1f2421}
+  .items th.right,.items td.right{text-align:right}
+  .items th.center,.items td.center{text-align:center}
+  .footer-section{display:flex;justify-content:space-between;align-items:flex-start;gap:40px;margin-top:30px}
+  .info{flex:1}
+  .info-label{font-size:12px;font-weight:700;color:#1f2421;margin-bottom:10px}
+  .info-line{font-size:12px;color:#5a5e5b;line-height:1.6}
+  .net{text-align:right;flex-shrink:0}
+  .net-label{font-size:18px;font-weight:700;color:#1f2421;display:inline-block;margin-right:8px;vertical-align:middle}
+  .net-value{font-size:28px;font-weight:700;color:#1f2421;display:inline-block;vertical-align:middle}
+  @media print{body{margin:0}.page{margin:0;box-shadow:none}}
+  @page{size:A4;margin:0}
+`;
+
+// Construit le HTML doc complet (utilisable iframe srcDoc + popup)
+function buildInvoiceDoc(inv, shop) {
+  return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Facture ${esc(inv.id)}</title><style>${INVOICE_CSS}</style></head><body>${buildInvoiceHTML(inv, shop)}</body></html>`;
+}
+
+// ─── Invoice Preview Modal (iframe inline, no popup) ─────────────────────────
+function InvoicePreviewModal({ inv, shop, onShare, onClose }) {
+  const doc = buildInvoiceDoc(inv, shop);
+
+  function printIt() {
+    // Trouver l'iframe et imprimer son contenu
+    const iframe = document.getElementById('invoice-preview-iframe');
+    if (!iframe?.contentWindow) { toast.error('Erreur impression'); return; }
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[55] overflow-y-auto py-4 px-2 lg:px-4 flex items-start lg:items-center justify-center" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-surface rounded-2xl shadow-xl w-full max-w-3xl my-auto flex flex-col" style={{ maxHeight: '95vh' }}>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-line/70">
+          <div>
+            <div className="font-semibold text-ink">Aperçu facture {inv.id}</div>
+            <div className="text-xs text-muted">{inv.client} · {fmtFcfa(inv.net ?? inv.total ?? 0)}</div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={printIt} className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-sm border border-line/70 rounded-lg hover:bg-bone">
+              <Download size={13}/> Imprimer / PDF
+            </button>
+            <button onClick={() => onShare(inv)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-brick-500 hover:bg-brick-600 text-white rounded-lg">
+              <Share2 size={13}/> Partager
+            </button>
+            <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-sand text-muted"><X size={15}/></button>
+          </div>
+        </div>
+        <div className="flex-1 overflow-auto bg-bone p-2 lg:p-4 grid place-items-start">
+          <iframe id="invoice-preview-iframe" srcDoc={doc} title="Facture"
+            className="bg-white shadow-lg" style={{ width: '794px', maxWidth: '100%', height: '1123px', border: '0' }}/>
+        </div>
+        <div className="sm:hidden px-5 py-3 border-t border-line/70">
+          <button onClick={printIt} className="w-full flex items-center justify-center gap-2 py-2.5 border border-line/70 rounded-xl text-sm font-medium hover:bg-bone">
+            <Download size={14}/> Imprimer / Enregistrer PDF
+          </button>
+        </div>
       </div>
     </div>
-    <h2>Client</h2>
-    <div style="font-size:16px;font-weight:500">${escapeHtml(inv.client)}</div>
-    <h2>Détail</h2>
-    <table>
-      <thead><tr><th>Description</th><th class="right">Montant</th></tr></thead>
-      <tbody>
-        <tr><td>${escapeHtml(inv.description || 'Prestations & marchandises')}</td><td class="right">${inv.total.toLocaleString('fr-FR')} FCFA</td></tr>
-      </tbody>
-    </table>
-    <div class="total-row">Total · ${inv.total.toLocaleString('fr-FR')} FCFA</div>
-    ${notesBlock}
-    <p class="muted" style="margin-top:32px;font-size:11px">Document généré automatiquement par gestCopta · ${fmtDate()}</p>
-  `;
-  printHTML({ title: `Facture ${inv.id}`, body: html });
-  toast.success(`Aperçu facture ${inv.id} ouvert`);
+  );
 }
 
-function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// ─── Share invoice (Web Share API + fallback channels) ───────────────────────
+function buildShareText(inv, shop) {
+  const fmt = n => `${Number(n || 0).toLocaleString('fr-FR')}F`;
+  const lines = [
+    `*Facture ${inv.id}*`,
+    shop?.name ? `Émetteur : ${shop.name}` : null,
+    shop?.phone ? `Tél : ${shop.phone}` : null,
+    '',
+    `Destinataire : ${inv.client}`,
+    inv.phone ? `Tél : ${inv.phone}` : null,
+    inv.adresseLivraison ? `Adresse : ${inv.adresseLivraison}` : null,
+    '',
+    'Articles :',
+    ...(inv.lineItems || []).map(l => `• ${l.name} ×${l.qty} = ${fmt(l.unitPrice * l.qty)}`),
+    inv.description ? `• ${inv.description} = ${fmt(inv.total)}` : null,
+    inv.fraisLivraison?.montant    ? `• Livraison : ${inv.fraisLivraison.sens}${fmt(inv.fraisLivraison.montant)}` : null,
+    inv.fraisInstallation?.montant ? `• Installation : ${inv.fraisInstallation.sens}${fmt(inv.fraisInstallation.montant)}` : null,
+    inv.fraisService?.montant      ? `• Service : ${inv.fraisService.sens}${fmt(inv.fraisService.montant)}` : null,
+    '',
+    `*Net à payer : ${fmt(inv.net ?? inv.total ?? 0)}*`,
+    inv.note ? `\nNote : ${inv.note}` : null,
+  ].filter(l => l !== null);
+  return lines.join('\n');
 }
 
-const STATUSES = ['payée', 'attente', 'retard'];
-
-export default function Invoices() {
-  const { can } = useAuth();
-  const canEdit   = can('finances', 'modifier');
-  const canDelete = can('finances', 'modifier');
-  const [pwdAction, setPwdAction] = useState(null);
-  const [invoices, setInvoices] = usePersistedState('gestcopta:invoices', initialInvoices);
-  const [tab, setTab] = useState('all');
-  const [search, setSearch] = useState('');
-  const [showNew, setShowNew] = useState(false);
-  const [prefill, setPrefill] = useState(null); // pre-fill draft when invoice created from order
-  const [detail, setDetail]   = useState(null);
-  const [menuFor, setMenuFor] = useState(null);
-
-  // Auto-open NewInvoice modal when an order requested an invoice creation
-  useEffect(() => {
+async function shareInvoiceNative(inv, shop) {
+  const text = buildShareText(inv, shop);
+  const title = `Facture ${inv.id}`;
+  if (navigator.share) {
     try {
-      const raw = sessionStorage.getItem('gestcopta:invoiceFromOrder');
-      if (raw) {
-        const draft = JSON.parse(raw);
-        sessionStorage.removeItem('gestcopta:invoiceFromOrder');
-        setPrefill(draft);
-        setShowNew(true);
-      }
-    } catch {}
-  }, []);
+      await navigator.share({ title, text });
+      return true;
+    } catch (e) {
+      if (e.name !== 'AbortError') toast.error('Partage annulé');
+      return false;
+    }
+  }
+  return false;
+}
 
-  const tabs = [
-    { id: 'all',     label: 'Toutes',    count: invoices.length },
-    { id: 'payée',   label: 'Payées',    count: invoices.filter(i => i.status === 'payée').length },
-    { id: 'attente', label: 'Attente',   count: invoices.filter(i => i.status === 'attente').length },
-    { id: 'retard',  label: 'En retard', count: invoices.filter(i => i.status === 'retard').length }
+// ─── Share modal (fallback channels) ─────────────────────────────────────────
+function ShareModal({ inv, shop, onClose }) {
+  const text  = buildShareText(inv, shop);
+  const title = `Facture ${inv.id}`;
+  const [copied, setCopied] = useState(false);
+
+  function copy() {
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true); toast.success('Texte copié');
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  const enc = encodeURIComponent(text);
+  const channels = [
+    { label: 'WhatsApp', icon: MessageCircle, color: '#25D366', href: `https://wa.me/?text=${enc}` },
+    { label: 'Email',    icon: Mail,          color: '#3B82F6', href: `mailto:?subject=${encodeURIComponent(title)}&body=${enc}` },
+    { label: 'SMS',      icon: MessageCircle, color: '#F59E0B', href: `sms:?body=${enc}` },
   ];
-  let filtered = tab === 'all' ? invoices : invoices.filter(i => i.status === tab);
-  if (search.trim()) {
-    const q = search.toLowerCase();
-    filtered = filtered.filter(i =>
-      i.id.toLowerCase().includes(q) ||
-      i.client.toLowerCase().includes(q)
-    );
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto py-4 px-4 flex items-start lg:items-center justify-center" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-surface rounded-2xl shadow-xl w-full max-w-md my-auto">
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-line/70">
+          <div>
+            <div className="font-semibold text-ink">Partager la facture</div>
+            <div className="text-xs text-muted">{inv.id} · {fmtFcfa(inv.net ?? inv.total ?? 0)}</div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-sand text-muted"><X size={15}/></button>
+        </div>
+        <div className="px-5 py-4 space-y-3">
+          <div className="grid grid-cols-3 gap-2">
+            {channels.map(({ label, icon: Icon, color, href }) => (
+              <a key={label} href={href} target="_blank" rel="noopener noreferrer" onClick={onClose}
+                className="flex flex-col items-center gap-2 py-4 rounded-xl border border-line/70 hover:border-brick-300 transition-colors">
+                <div className="w-11 h-11 rounded-full grid place-items-center" style={{ background: color + '20' }}>
+                  <Icon size={20} style={{ color }}/>
+                </div>
+                <span className="text-xs font-medium text-ink">{label}</span>
+              </a>
+            ))}
+          </div>
+          <button onClick={copy}
+            className="w-full flex items-center justify-center gap-2 py-3 border border-line/70 rounded-xl text-sm font-medium hover:bg-bone">
+            {copied ? <><Check size={14}/> Copié</> : <><Link2 size={14}/> Copier le texte</>}
+          </button>
+          {typeof navigator !== 'undefined' && navigator.share && (
+            <button onClick={async () => {
+              try { await navigator.share({ title, text }); onClose(); } catch {}
+            }} className="w-full flex items-center justify-center gap-2 py-3 bg-brick-500 hover:bg-brick-600 text-white rounded-xl text-sm font-medium">
+              <Share2 size={14}/> Plus d'options (système)
+            </button>
+          )}
+          <div className="text-[11px] text-muted text-center pt-1">
+            WhatsApp, email, SMS ou copier le texte
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FraisRow({ label, value, sens, onChange }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="text-xs text-muted w-28 shrink-0">{label}</span>
+      <div className="flex rounded-lg overflow-hidden border border-line/70">
+        {['+', '-'].map(s => (
+          <button key={s} type="button" onClick={() => onChange('sens', s)}
+            className={`w-7 h-7 text-sm font-bold transition-colors ${sens === s ? 'bg-brick-500 text-white' : 'bg-surface text-muted hover:bg-bone'}`}>{s}</button>
+        ))}
+      </div>
+      <input type="number" min="0" value={value} onChange={e => onChange('montant', +e.target.value)}
+        placeholder="0" className="field-input flex-1 py-1.5 text-sm"/>
+    </div>
+  );
+}
+
+// ─── Sélecteur commande ───────────────────────────────────────────────────────
+function OrderPickerModal({ orders, onPick, onClose }) {
+  const [search, setSearch] = useState('');
+  const filtered = orders.filter(o =>
+    !search || o.client?.toLowerCase().includes(search.toLowerCase()) || o.id?.includes(search)
+  );
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[60] overflow-y-auto py-4 px-4 flex items-start lg:items-center justify-center" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="bg-surface rounded-2xl shadow-xl w-full max-w-md my-auto max-h-[80vh] flex flex-col">
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-line/70">
+          <div className="font-semibold text-ink">Choisir une commande</div>
+          <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-sand text-muted"><X size={15}/></button>
+        </div>
+        <div className="px-4 py-3">
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Client, N° commande…"
+            className="field-input w-full"/>
+        </div>
+        <ul className="flex-1 overflow-y-auto divide-y divide-line/40 px-2 pb-3">
+          {filtered.length === 0 && <li className="py-8 text-center text-muted text-sm">Aucune commande.</li>}
+          {filtered.map(o => (
+            <li key={o.id}>
+              <button onClick={() => { onPick(o); onClose(); }}
+                className="w-full flex items-center justify-between px-3 py-3 hover:bg-bone/60 rounded-xl text-left">
+                <div>
+                  <div className="font-medium text-sm text-ink">{o.client}</div>
+                  <div className="text-xs text-muted">{o.id} · {o.shop} · {o.date}</div>
+                  {o.items && <div className="text-xs text-muted truncate max-w-[260px]">{o.items}</div>}
+                </div>
+                <div className="text-right shrink-0 ml-3">
+                  <div className="font-semibold tabular-nums text-sm">{fmtFcfa(o.net ?? o.total ?? 0)}</div>
+                  <div className="text-[10px] text-muted">{o.status}</div>
+                </div>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
+// ─── Formulaire facture (= composantes commande + description) ────────────────
+function InvoiceModal({ invoice, clients, shops, products, stockPoints, stockByPoint, orders, onClose, onSave }) {
+  const isEdit = !!invoice;
+  const blank = { montant: '', sens: '+' };
+
+  const [f, setF] = useState({
+    client:           invoice?.client           || '',
+    clientId:         invoice?.clientId         || '',
+    phone:            invoice?.phone            || '',
+    shop:             invoice?.shop             || '',
+    shopId:           invoice?.shopId           || '',
+    lineItems:        invoice?.lineItems        || [],
+    description:      invoice?.description      || '',
+    total:            invoice?.total            || 0,
+    status:           invoice?.status           || 'attente',
+    note:             invoice?.note             || '',
+    adresseLivraison: invoice?.adresseLivraison || '',
+    fraisLivraison:   invoice?.fraisLivraison   || { ...blank },
+    fraisInstallation:invoice?.fraisInstallation|| { ...blank },
+    fraisService:     invoice?.fraisService     || { ...blank },
+    fromOrderId:      invoice?.fromOrderId      || null,
+  });
+  const [newProd, setNewProd]     = useState({ productId: '', qty: 1 });
+  const [pickOrder, setPickOrder] = useState(false);
+  const [done, setDone]           = useState(false);
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+  const setFrais = (key, field, val) => setF(p => ({ ...p, [key]: { ...p[key], [field]: val } }));
+  const net = calcNet(f);
+
+  function loadFromOrder(o) {
+    setF(p => ({
+      ...p,
+      client:    o.client || '', clientId: o.clientId || '',
+      phone:     o.phone  || '', shop: o.shop || '', shopId: o.shopId || '',
+      lineItems: o.lineItems || [],
+      total:     o.total  || 0,
+      note:      o.note   || '',
+      adresseLivraison: o.adresseLivraison || '',
+      fraisLivraison:   o.fraisLivraison   || { ...blank },
+      fraisInstallation:o.fraisInstallation|| { ...blank },
+      fraisService:     o.fraisService     || { ...blank },
+      fromOrderId: o.id,
+    }));
   }
 
-  function setStatus(id, status) {
-    setInvoices(prev => prev.map(i => i.id === id ? { ...i, status } : i));
-    setMenuFor(null);
+  if (done) return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+      <div className="bg-surface rounded-2xl p-8 text-center shadow-xl">
+        <CheckCircle size={44} className="text-brick-500 mx-auto mb-2"/>
+        <div className="font-semibold text-ink">{isEdit ? 'Facture modifiée' : 'Facture créée'}</div>
+      </div>
+    </div>
+  );
+
+  const shopProducts = f.shopId
+    ? products.filter(p => stockPoints.filter(sp => sp.shopId === f.shopId).some(sp => (stockByPoint[p.id] || {})[sp.id] > 0))
+    : products;
+
+  return (
+    <>
+      {pickOrder && <OrderPickerModal orders={orders} onPick={loadFromOrder} onClose={() => setPickOrder(false)}/>}
+      <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto py-4 px-4 flex items-start lg:items-center justify-center">
+        <div className="bg-surface rounded-2xl shadow-xl w-full max-w-lg my-auto">
+          <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-line/70 sticky top-0 bg-surface z-10">
+            <div className="font-semibold text-ink">{isEdit ? 'Modifier la facture' : 'Nouvelle facture'}</div>
+            <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-sand text-muted"><X size={15}/></button>
+          </div>
+
+          <div className="px-5 py-4 space-y-3">
+            {/* Import depuis commande */}
+            {!isEdit && (
+              <button type="button" onClick={() => setPickOrder(true)}
+                className="w-full flex items-center justify-center gap-2 py-2.5 border border-brick-200 bg-brick-50/50 text-brick-600 rounded-xl text-sm font-medium hover:bg-brick-50">
+                <ArrowRight size={14}/> Générer depuis une commande existante
+              </button>
+            )}
+            {f.fromOrderId && (
+              <div className="text-xs text-brick-600 bg-brick-50 px-3 py-1.5 rounded-lg">
+                Liée à la commande {f.fromOrderId}
+              </div>
+            )}
+
+            {/* Client */}
+            <div>
+              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Client *</label>
+              {clients.length > 0 ? (
+                <select value={f.clientId} onChange={e => {
+                  const c = clients.find(c => c.id === e.target.value);
+                  set('clientId', e.target.value); set('client', c?.name || '');
+                  if (c?.phone) set('phone', c.phone);
+                }} className="field-input">
+                  <option value="">Choisir un client…</option>
+                  {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              ) : (
+                <input value={f.client} onChange={e => set('client', e.target.value)} placeholder="Nom du client" className="field-input"/>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Téléphone</label>
+                <input value={f.phone} onChange={e => set('phone', e.target.value)} placeholder="+221 77 xxx xx xx" className="field-input"/>
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Boutique</label>
+                {shops.length > 0 ? (
+                  <select value={f.shopId} onChange={e => {
+                    const s = shops.find(s => s.id === e.target.value);
+                    set('shopId', e.target.value); set('shop', s?.name || '');
+                  }} className="field-input">
+                    <option value="">Choisir…</option>
+                    {shops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                ) : (
+                  <input value={f.shop} onChange={e => set('shop', e.target.value)} placeholder="Boutique" className="field-input"/>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Adresse de livraison</label>
+              <input value={f.adresseLivraison} onChange={e => set('adresseLivraison', e.target.value)} placeholder="Quartier, Ville" className="field-input"/>
+            </div>
+
+            {/* Articles (dropdown) */}
+            <div>
+              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Articles</label>
+              <div className="flex gap-2 mb-2">
+                <select value={newProd.productId} onChange={e => setNewProd(p => ({ ...p, productId: e.target.value }))}
+                  className="field-input flex-1 py-2 text-sm">
+                  <option value="">Choisir un produit…</option>
+                  {shopProducts.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}{p.price ? ` — ${p.price.toLocaleString('fr-FR')} F` : ''}</option>
+                  ))}
+                </select>
+                <input type="number" min="1" value={newProd.qty} onChange={e => setNewProd(p => ({ ...p, qty: +e.target.value }))}
+                  className="field-input w-16 py-2 text-sm text-center" placeholder="Qté"/>
+                <button type="button" onClick={() => {
+                  const prod = products.find(p => p.id === newProd.productId);
+                  if (!prod) return;
+                  const item = { productId: prod.id, name: prod.name, qty: newProd.qty || 1, unitPrice: prod.price || 0 };
+                  const idx = f.lineItems.findIndex(l => l.productId === prod.id);
+                  const updated = idx >= 0
+                    ? f.lineItems.map((l, i) => i === idx ? { ...l, qty: l.qty + item.qty } : l)
+                    : [...f.lineItems, item];
+                  const t = updated.reduce((s, l) => s + l.unitPrice * l.qty, 0);
+                  set('lineItems', updated); set('total', t);
+                  setNewProd({ productId: '', qty: 1 });
+                }} className="px-3 py-2 bg-brick-500 hover:bg-brick-600 text-white text-sm font-medium rounded-xl shrink-0">+</button>
+              </div>
+              {f.lineItems.length > 0 && (
+                <div className="border border-line/50 rounded-xl overflow-hidden mb-1">
+                  {f.lineItems.map((item, i) => (
+                    <div key={item.productId} className="flex items-center gap-2 px-3 py-2 border-b border-line/40 last:border-0">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-ink truncate">{item.name}</div>
+                        <div className="text-xs text-muted">{item.unitPrice.toLocaleString('fr-FR')} F × {item.qty} = {(item.unitPrice * item.qty).toLocaleString('fr-FR')} F</div>
+                      </div>
+                      <button type="button" onClick={() => {
+                        const u = f.lineItems.filter((_, j) => j !== i);
+                        set('lineItems', u); set('total', u.reduce((s, l) => s + l.unitPrice * l.qty, 0));
+                      }} className="w-6 h-6 rounded border border-rose-200 text-rose-400 grid place-items-center"><X size={10}/></button>
+                    </div>
+                  ))}
+                  <div className="px-3 py-2 bg-bone/50 flex justify-between text-sm font-semibold">
+                    <span className="text-muted">Sous-total articles</span>
+                    <span className="tabular-nums">{fmtFcfa(f.total)}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Description libre */}
+            <div>
+              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Description complémentaire</label>
+              <textarea value={f.description} onChange={e => set('description', e.target.value)}
+                placeholder="Détails supplémentaires, prestations…" className="field-input resize-none" rows={2}/>
+            </div>
+
+            {/* Frais */}
+            <div className="border-t border-line/50 pt-3 space-y-2">
+              <div className="text-xs font-semibold text-ink uppercase tracking-wider mb-1">Frais <span className="font-normal normal-case text-muted">(+ ajout / − déduction)</span></div>
+              <FraisRow label="Livraison"    value={f.fraisLivraison.montant}    sens={f.fraisLivraison.sens}    onChange={(field, val) => setFrais('fraisLivraison', field, val)}/>
+              <FraisRow label="Installation" value={f.fraisInstallation.montant} sens={f.fraisInstallation.sens} onChange={(field, val) => setFrais('fraisInstallation', field, val)}/>
+              <FraisRow label="Service"      value={f.fraisService.montant}      sens={f.fraisService.sens}      onChange={(field, val) => setFrais('fraisService', field, val)}/>
+            </div>
+
+            {/* Net à payer */}
+            <div className="bg-brick-50/60 border border-brick-100 rounded-xl px-4 py-3 flex items-center justify-between">
+              <span className="text-sm font-semibold text-ink">Net à payer</span>
+              <span className="text-xl font-bold tabular-nums text-brick-600">{fmtFcfa(net)}</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Statut</label>
+                <select value={f.status} onChange={e => set('status', e.target.value)} className="field-input">
+                  {INVOICE_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Note</label>
+              <input value={f.note} onChange={e => set('note', e.target.value)} placeholder="Remarque, instructions…" className="field-input"/>
+            </div>
+          </div>
+
+          <div className="flex gap-3 px-5 pb-5">
+            <button onClick={onClose} className="flex-1 py-2.5 border border-line/70 rounded-xl text-sm font-medium hover:bg-sand">Annuler</button>
+            <button disabled={!f.client && !f.clientId} onClick={() => {
+              const clientObj = clients.find(c => c.id === f.clientId);
+              onSave({
+                id:               invoice?.id || `#F-${Date.now().toString(36).toUpperCase().slice(-5)}`,
+                client:           clientObj?.name || f.client,
+                clientId:         f.clientId,
+                phone:            f.phone,
+                shop:             shops.find(s => s.id === f.shopId)?.name || f.shop,
+                shopId:           f.shopId,
+                lineItems:        f.lineItems,
+                description:      f.description,
+                total:            f.total || 0,
+                net,
+                status:           f.status,
+                note:             f.note,
+                adresseLivraison: f.adresseLivraison,
+                fraisLivraison:   f.fraisLivraison,
+                fraisInstallation:f.fraisInstallation,
+                fraisService:     f.fraisService,
+                fromOrderId:      f.fromOrderId,
+                date:             invoice?.date || new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }).toUpperCase(),
+                createdAt:        invoice?.createdAt || new Date().toISOString(),
+              });
+              setDone(true); setTimeout(() => { setDone(false); onClose(); }, 900);
+            }} className="flex-1 py-2.5 bg-brick-500 hover:bg-brick-600 disabled:opacity-40 text-white rounded-xl text-sm font-medium">
+              {isEdit ? 'Enregistrer' : 'Créer la facture'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
+export default function Invoices() {
+  const { invoices, setInvoices, clients, shops, allShops, products, stockPoints, stockByPoint, orders } = useStore();
+  const [modal, setModal]       = useState(null);
+  const [toDelete, setToDelete] = useState(null);
+  const [shareInv, setShareInv] = useState(null);
+  const [previewInv, setPreviewInv] = useState(null);
+  const [search, setSearch]     = useState('');
+  const [filterStatus, setFilterStatus] = useState('');
+
+  // Lookup shop by invoice's shopId (use allShops to find even outside filter)
+  function shopFor(inv) {
+    return (allShops || shops).find(s => s.id === inv.shopId);
   }
-  function deleteInvoice(id) {
-    setInvoices(prev => prev.filter(i => i.id !== id));
-    setMenuFor(null);
-    setDetail(null);
+
+  function handleShare(inv) {
+    // Toujours montrer modal avec options (WhatsApp/email/SMS/copy)
+    // L'utilisateur peut aussi appeler Web Share natif depuis le modal
+    setShareInv(inv);
   }
-  function saveInvoice(inv) {
+
+  function save(inv) {
     setInvoices(prev => {
       const i = prev.findIndex(x => x.id === inv.id);
       if (i >= 0) { const n = [...prev]; n[i] = inv; return n; }
@@ -116,395 +635,180 @@ export default function Invoices() {
     });
   }
 
+  function remove(id) { setInvoices(prev => prev.filter(i => i.id !== id)); setToDelete(null); }
+  function changeStatus(id, status) { setInvoices(prev => prev.map(i => i.id === id ? { ...i, status } : i)); }
+
+  let filtered = invoices;
+  if (search.trim()) {
+    const q = search.toLowerCase();
+    filtered = filtered.filter(i => i.client?.toLowerCase().includes(q) || i.id?.toLowerCase().includes(q));
+  }
+  if (filterStatus) filtered = filtered.filter(i => i.status === filterStatus);
+
+  const totalNet   = invoices.reduce((s, i) => s + (i.net ?? i.total ?? 0), 0);
+  const totalPayee = invoices.filter(i => i.status === 'payée').reduce((s, i) => s + (i.net ?? i.total ?? 0), 0);
+  const nbAttente  = invoices.filter(i => i.status === 'attente').length;
+
+  const STATUS_TONE = { payée: 'success', attente: 'warning' };
+
   return (
     <div className="fade-in">
-      <div className="hidden lg:block">
-        <PageHeader
-          breadcrumb="COMPTABILITÉ"
-          title="Factures"
-          searchPlaceholder="Client, ID facture..."
-          searchValue={search}
-          onSearchChange={setSearch}
-          filters={<HeaderFilter value="30" onChange={() => {}} options={[
-            { value: '7', label: '7 derniers jours' },
-            { value: '30', label: '30 derniers jours' },
-            { value: '90', label: '90 derniers jours' },
-            { value: 'mtd', label: 'Mois en cours' },
-          ]} />}
-          actionLabel="Nouvelle facture"
-          onAction={() => setShowNew(true)}
-          rightExtras={
-            <button
-              onClick={() => exportInvoicesCSV(invoices)}
-              className="px-3 py-2 text-[15px] border border-line/70 rounded-lg hover:bg-surface">
-              Exporter
-            </button>
-          }
-        />
-      </div>
-      <MobileTopBar alerts={3} subtitle="FACTURES" />
-
-      <div className="px-4 lg:px-8 py-5 space-y-5">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <KpiCard label="Total émis"  value={fmtFcfa(invoiceKPIs.total)}   sublabel="ce mois · FCFA" accent large />
-          <KpiCard label="Payées"      value={fmtFcfa(invoiceKPIs.paid)}    sublabel="68% du total" />
-          <KpiCard label="En attente"  value={fmtFcfa(invoiceKPIs.pending)} deltaTone="warning" sublabel="dans les délais" />
-          <KpiCard label="En retard"   value={fmtFcfa(invoiceKPIs.overdue)} delta="2 clients" deltaTone="neg" sublabel="à relancer" />
-        </div>
-
-        <button
-          onClick={() => setShowNew(true)}
-          className="lg:hidden w-full flex items-center justify-center gap-2 py-3 bg-brick-500 hover:bg-brick-600 text-white text-sm font-semibold rounded-xl transition-colors"
-        >
-          <Plus size={15} /> Nouvelle facture
-        </button>
-
-        <Card>
-          <div className="px-4 lg:px-5 pt-4 pb-3 flex items-center justify-between gap-3 flex-wrap">
-            <Tabs tabs={tabs} value={tab} onChange={setTab} />
-            <div className="text-xs text-muted">{filtered.length} factures</div>
-          </div>
-
-          {/* Mobile cards */}
-          <ul className="lg:hidden divide-y divide-line/50 px-2">
-            {filtered.map(inv => (
-              <li key={inv.id} className="px-3 py-3">
-                <div className="flex items-start gap-3 cursor-pointer" onClick={() => setDetail({ inv, mode: 'view' })}>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <span className="font-mono text-[11px] text-brick-500 font-semibold">{inv.id}</span>
-                      <span className="text-[11px] text-muted">{inv.date}</span>
-                    </div>
-                    <div className="text-sm font-medium text-ink truncate">{inv.client}</div>
-                    <div className="text-[11px] text-muted mt-0.5">Échéance · {inv.due}</div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-sm font-semibold tabular-nums">{fmtFcfa(inv.total)}</div>
-                    <div className="mt-0.5"><StatusBadge status={inv.status} /></div>
-                  </div>
-                </div>
-                {/* Mobile action row */}
-                <div className="flex items-center gap-2 mt-2.5 pt-2.5 border-t border-line/40">
-                  <button
-                    onClick={() => setDetail({ inv, mode: 'view' })}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs border border-line/70 rounded-lg bg-bone/40 text-ink/70 hover:border-brick-200">
-                    <Eye size={12} /> Voir
-                  </button>
-                  <button
-                    onClick={() => printInvoice(inv)}
-                    className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs border border-line/70 rounded-lg text-ink/70 hover:border-brick-200">
-                    <Download size={12} /> PDF
-                  </button>
-                  {inv.status !== 'payée' ? (
-                    <button
-                      onClick={() => toast.success(`Relance envoyée à ${inv.client}`)}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs border border-brick-200 rounded-lg bg-brick-50 text-brick-600 font-medium">
-                      <Send size={12} /> Relancer
-                    </button>
-                  ) : (
-                    <button
-                      onClick={() => setDetail({ inv, mode: 'edit' })}
-                      className="flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs border border-line/70 rounded-lg text-ink/70">
-                      <Edit3 size={12} /> Modifier
-                    </button>
-                  )}
-                </div>
-              </li>
-            ))}
-            {filtered.length === 0 && <li className="text-center py-10 text-muted text-sm">Aucune facture.</li>}
-          </ul>
-
-          {/* Desktop table */}
-          <div className="hidden lg:block overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-y border-line/70 text-[10px] uppercase tracking-[0.1em] text-muted">
-                  <th className="text-left py-2 px-5 font-medium">ID</th>
-                  <th className="text-left py-2 px-3 font-medium">Date</th>
-                  <th className="text-left py-2 px-3 font-medium">Client</th>
-                  <th className="text-left py-2 px-3 font-medium">Échéance</th>
-                  <th className="text-right py-2 px-3 font-medium">Total</th>
-                  <th className="text-left py-2 px-3 font-medium">Statut</th>
-                  <th className="text-right py-2 px-5 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((inv) => (
-                  <tr key={inv.id}
-                    onClick={() => setDetail({ inv, mode: 'view' })}
-                    className="border-b border-line/40 last:border-0 hover:bg-brick-50/30 cursor-pointer">
-                    <td className="py-3 px-5 font-mono text-xs text-brick-500 font-semibold">{inv.id}</td>
-                    <td className="px-3 tabular-nums text-muted">{inv.date}</td>
-                    <td className="px-3 font-medium text-ink">{inv.client}</td>
-                    <td className="px-3 text-muted">{inv.due}</td>
-                    <td className="text-right tabular-nums px-3 font-semibold">{fmtFcfa(inv.total)}</td>
-                    <td className="px-3"><StatusBadge status={inv.status} /></td>
-                    <td className="text-right px-5" onClick={e => e.stopPropagation()}>
-                      <div className="inline-flex items-center gap-1 text-muted relative">
-                        <button onClick={() => setDetail({ inv, mode: 'view' })}
-                          className="w-7 h-7 grid place-items-center hover:bg-surface hover:text-brick-500 rounded" title="Voir">
-                          <Eye size={13} />
-                        </button>
-                        <button onClick={() => alert(`Téléchargement PDF facture ${inv.id}`)}
-                          className="w-7 h-7 grid place-items-center hover:bg-surface hover:text-brick-500 rounded" title="Télécharger PDF">
-                          <Download size={13} />
-                        </button>
-                        <button onClick={() => toast.success(`Relance envoyée à ${inv.client}`)}
-                          className="w-7 h-7 grid place-items-center hover:bg-surface hover:text-brick-500 rounded" title="Envoyer / Relancer">
-                          <Send size={13} />
-                        </button>
-                        <button onClick={() => setMenuFor(menuFor === inv.id ? null : inv.id)}
-                          className={`w-7 h-7 grid place-items-center hover:bg-surface hover:text-ink rounded ${menuFor === inv.id ? 'bg-surface text-ink' : ''}`} title="Plus">
-                          <MoreHorizontal size={13} />
-                        </button>
-                        {menuFor === inv.id && (
-                          <InvoiceActionMenu
-                            inv={inv}
-                            onClose={() => setMenuFor(null)}
-                            onSetStatus={setStatus}
-                            onEdit={() => { setDetail({ inv, mode: 'edit' }); setMenuFor(null); }}
-                            onDelete={deleteInvoice}
-                          />
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && (
-                  <tr><td colSpan={7} className="py-10 text-center text-muted text-sm">Aucune facture.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      </div>
-
-      {showNew && <NewInvoiceModal onClose={() => setShowNew(false)} onCreate={(inv) => { saveInvoice(inv); setShowNew(false); }} />}
-
-      {detail && (
-        <InvoiceDetailModal
-          inv={detail.inv}
-          mode={detail.mode}
-          onClose={() => setDetail(null)}
-          onSave={(inv) => { saveInvoice(inv); setDetail(null); }}
-          onDelete={() => deleteInvoice(detail.inv.id)}
+      {modal !== null && (
+        <InvoiceModal
+          invoice={modal === 'add' ? null : modal}
+          clients={clients} shops={shops} products={products}
+          stockPoints={stockPoints} stockByPoint={stockByPoint} orders={orders}
+          onClose={() => setModal(null)} onSave={save}
         />
       )}
-    </div>
-  );
-}
-
-// ===================================================================
-function InvoiceActionMenu({ inv, onClose, onSetStatus, onEdit, onDelete }) {
-  const ref = useRef(null);
-  useEffect(() => {
-    const onDown = (e) => { if (!ref.current?.contains(e.target)) onClose(); };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [onClose]);
-
-  const setItems = STATUSES.filter(s => s !== inv.status).map(s => ({
-    status: s,
-    label: s === 'payée' ? 'Marquer payée' : s === 'attente' ? 'Marquer en attente' : 'Marquer en retard',
-  }));
-
-  return (
-    <div ref={ref}
-      className="absolute top-9 right-0 w-52 bg-surface border border-line/70 rounded-xl shadow-pop z-20 py-1.5 text-sm">
-      {setItems.map(({ status, label }) => (
-        <button key={status}
-          onClick={() => onSetStatus(inv.id, status)}
-          className="w-full flex items-center gap-2.5 px-3.5 py-2 hover:bg-bone/60 text-ink/85 text-left">
-          <CheckCircle size={14} className="text-brick-600" />
-          <span>{label}</span>
-        </button>
-      ))}
-      <div className="border-t border-line/50 my-1" />
-      <button onClick={onEdit}
-        className="w-full flex items-center gap-2.5 px-3.5 py-2 hover:bg-bone/60 text-ink/85 text-left">
-        <Edit3 size={14} className="text-muted" /> <span>Modifier</span>
-      </button>
-      <button onClick={() => { if (confirm(`Supprimer ${inv.id} ?`)) onDelete(inv.id); }}
-        className="w-full flex items-center gap-2.5 px-3.5 py-2 hover:bg-rose-50 text-rose-600 text-left">
-        <Trash2 size={14} /> <span>Supprimer</span>
-      </button>
-    </div>
-  );
-}
-
-// ===================================================================
-function InvoiceDetailModal({ inv, mode: initialMode, onClose, onSave, onDelete }) {
-  const [mode, setMode] = useState(initialMode);
-  const [f, setF]       = useState({ ...inv });
-  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
-  const isEdit = mode === 'edit';
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center bg-black/50 backdrop-blur-sm slide-in lg:p-4" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()}
-        className="bg-surface w-full lg:rounded-2xl lg:max-w-md lg:shadow-pop h-full lg:h-auto lg:max-h-[90vh] overflow-y-auto flex flex-col">
-        <div className="lg:hidden px-4 pt-4 pb-3 flex items-center gap-3 border-b border-line/60">
-          <button onClick={onClose} className="w-8 h-8 grid place-items-center -ml-1"><ArrowLeft size={18} /></button>
-          <div className="flex-1">
-            <div className="font-semibold text-ink">{isEdit ? 'Modifier' : 'Facture'} {inv.id}</div>
-            <div className="text-[11px] text-muted">{inv.date}</div>
-          </div>
-          <StatusBadge status={f.status} />
-        </div>
-        <div className="hidden lg:flex px-6 pt-5 pb-3 items-start justify-between border-b border-line/60">
-          <div>
-            <div className="text-[10px] tracking-[0.14em] uppercase text-muted">FACTURE · {isEdit ? 'MODIFICATION' : 'DÉTAIL'}</div>
-            <h2 className="text-lg font-semibold text-ink mt-1">{inv.id} — {inv.client}</h2>
-            <p className="text-xs text-muted mt-0.5">{inv.date} · échéance {inv.due}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <StatusBadge status={f.status} />
-            <button onClick={onClose} className="text-muted hover:text-ink p-1"><X size={18} /></button>
-          </div>
-        </div>
-
-        <div className="flex-1 px-4 lg:px-6 py-5 space-y-3">
-          <div>
-            <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Client</label>
-            <input value={f.client} disabled={!isEdit} onChange={e => set('client', e.target.value)} className="field-input disabled:bg-bone/60" />
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Date</label>
-              <input value={f.date} disabled={!isEdit} onChange={e => set('date', e.target.value)} className="field-input disabled:bg-bone/60" />
-            </div>
-            <div>
-              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Échéance</label>
-              <input value={f.due} disabled={!isEdit} onChange={e => set('due', e.target.value)} className="field-input disabled:bg-bone/60" />
-            </div>
-            <div>
-              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Total (FCFA)</label>
-              <input type="number" value={f.total} disabled={!isEdit} onChange={e => set('total', +e.target.value)} className="field-input disabled:bg-bone/60" />
-            </div>
-            <div>
-              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Statut</label>
-              <select value={f.status} onChange={e => set('status', e.target.value)} className="field-input">
-                {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+      {shareInv && <ShareModal inv={shareInv} shop={shopFor(shareInv)} onClose={() => setShareInv(null)}/>}
+      {previewInv && <InvoicePreviewModal inv={previewInv} shop={shopFor(previewInv)} onShare={(i) => { setShareInv(i); }} onClose={() => setPreviewInv(null)}/>}
+      {toDelete && (
+        <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto py-4 px-4 flex items-start lg:items-center justify-center">
+          <div className="bg-surface rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+            <Trash2 size={36} className="text-rose-500 mx-auto mb-3"/>
+            <div className="font-semibold text-ink mb-1">Supprimer {toDelete.id} ?</div>
+            <div className="flex gap-3 mt-5">
+              <button onClick={() => setToDelete(null)} className="flex-1 py-2.5 border border-line/70 rounded-xl text-sm font-medium hover:bg-sand">Annuler</button>
+              <button onClick={() => remove(toDelete.id)} className="flex-1 py-2.5 bg-rose-500 hover:bg-rose-600 text-white rounded-xl text-sm font-medium">Supprimer</button>
             </div>
           </div>
         </div>
+      )}
 
-        <div className="px-4 lg:px-6 py-4 border-t border-line/60 flex items-center justify-between gap-2 bg-surface">
-          <button
-            onClick={() => { if (confirm(`Supprimer ${inv.id} ?`)) onDelete(); }}
-            className="px-3 py-2 text-sm text-rose-600 hover:bg-rose-50 rounded-lg flex items-center gap-1.5">
-            <Trash2 size={14} /> Supprimer
-          </button>
-          <div className="flex items-center gap-2">
-            <button onClick={() => printInvoice(inv)}
-              className="px-3 py-2 text-sm border border-line/70 rounded-lg hover:bg-bone flex items-center gap-1.5">
-              <Download size={14} /> PDF
-            </button>
-            <button onClick={onClose} className="px-4 py-2 text-sm border border-line/70 rounded-lg hover:bg-bone">
-              {isEdit ? 'Annuler' : 'Fermer'}
-            </button>
-            {!isEdit ? (
-              <button onClick={() => setMode('edit')} className="px-5 py-2.5 bg-brick-500 hover:bg-brick-600 text-white text-sm font-semibold rounded-lg">Modifier</button>
-            ) : (
-              <button onClick={() => onSave(f)} className="px-5 py-2.5 bg-brick-500 hover:bg-brick-600 text-white text-sm font-semibold rounded-lg">Enregistrer</button>
-            )}
-          </div>
-        </div>
+      <div className="hidden lg:block">
+        <PageHeader breadcrumb="FACTURES" title="Factures" actionLabel="Nouvelle facture" onAction={() => setModal('add')}/>
       </div>
-    </div>
-  );
-}
+      <MobileTopBar subtitle="FACTURES"/>
 
-// ===================================================================
-function NewInvoiceModal({ onClose, onCreate }) {
-  const [client, setClient] = useState('');
-  const [date, setDate]     = useState(new Date().toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' }).toUpperCase());
-  const [due, setDue]       = useState('comptant');
-  const [total, setTotal]   = useState(87500);
-  const [description, setDescription] = useState('');
-
-  function create() {
-    if (!client.trim()) { toast.error('Client requis'); return; }
-    onCreate({
-      id: `#F-${Math.floor(220 + Math.random() * 99)}`,
-      date, client: client.trim(), due,
-      total: +total || 0, status: 'attente',
-      description,
-    });
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center bg-black/50 backdrop-blur-sm slide-in lg:p-4" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-surface w-full lg:rounded-2xl lg:max-w-[520px] lg:shadow-pop h-full lg:h-auto lg:max-h-[90vh] overflow-y-auto flex flex-col">
-        <div className="lg:hidden px-4 pt-4 pb-3 flex items-center gap-3 border-b border-line/60">
-          <button onClick={onClose} className="w-8 h-8 grid place-items-center -ml-1"><ArrowLeft size={18} /></button>
-          <div className="font-semibold text-ink">Nouvelle facture</div>
-        </div>
-        <div className="hidden lg:flex px-6 pt-5 pb-3 items-start justify-between border-b border-line/60">
-          <div>
-            <div className="text-[10px] tracking-[0.14em] uppercase text-muted">FACTURES · NOUVELLE</div>
-            <h2 className="text-lg font-semibold text-ink mt-1">Créer une facture</h2>
-          </div>
-          <button onClick={onClose} className="text-muted hover:text-ink p-1"><X size={18} /></button>
-        </div>
-
-        <div className="flex-1 px-4 lg:px-6 py-5 space-y-4">
-          <Field label="Client *">
-            <input value={client} onChange={e => setClient(e.target.value)} placeholder="Nom ou téléphone..." className="field-input" />
-          </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Date d'émission">
-              <input value={date} onChange={e => setDate(e.target.value)} className="field-input" />
-            </Field>
-            <Field label="Échéance">
-              <select value={due} onChange={e => setDue(e.target.value)} className="field-input">
-                <option value="comptant">Comptant</option>
-                <option value="15 jours">15 jours</option>
-                <option value="30 jours">30 jours</option>
-                <option value="60 jours">60 jours</option>
-              </select>
-            </Field>
-          </div>
-          <Field label="Description">
-            <textarea rows={3} value={description} onChange={e => setDescription(e.target.value)}
-              placeholder="Détail des prestations ou produits..." className="field-input resize-none" />
-          </Field>
-          <Field label="Montant (FCFA)">
-            <input type="number" min="0" value={total} onChange={e => setTotal(e.target.value)} className="field-input tabular-nums" />
-          </Field>
-          <div className="bg-brick-50/70 rounded-xl p-4">
-            <div className="text-[10px] uppercase tracking-wider text-muted">Montant total</div>
-            <div className="text-3xl font-semibold tabular-nums text-brick-600 mt-0.5">{fmtFcfaFull(+total || 0)}</div>
-            <div className="text-xs text-muted">FCFA</div>
-          </div>
-        </div>
-
-        <div className="px-4 lg:px-6 py-4 border-t border-line/60 flex items-center justify-end gap-2 bg-surface">
-          <button onClick={onClose} className="hidden lg:block px-4 py-2 text-sm border border-line/70 rounded-lg hover:bg-bone">Annuler</button>
-          <button
-            onClick={() => {
-              localStorage.setItem('gestcopta:invoiceDraft', JSON.stringify({ client, date, due, total, description }));
-              toast.success('Brouillon enregistré');
-            }}
-            className="flex-1 lg:flex-initial px-4 py-2.5 text-sm border border-line/70 rounded-lg">Brouillon</button>
-          <button
-            onClick={create}
-            disabled={!client.trim() || !total}
-            className="flex-1 lg:flex-initial px-5 py-2.5 bg-brick-500 hover:bg-brick-600 disabled:opacity-40 text-white text-sm font-semibold rounded-lg">
-            Créer →
+      <div className="px-4 lg:px-8 py-5 space-y-4">
+        {/* Mobile add */}
+        <div className="lg:hidden">
+          <button onClick={() => setModal('add')} className="w-full py-2.5 bg-brick-500 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2">
+            <Plus size={14}/> Nouvelle facture
           </button>
         </div>
-      </div>
-    </div>
-  );
-}
 
-function Field({ label, children }) {
-  return (
-    <div>
-      <label className="block text-[10px] uppercase tracking-wider text-muted mb-1.5">{label}</label>
-      {children}
+        {/* KPIs */}
+        <div className="grid grid-cols-3 gap-3">
+          <div className="bg-surface border border-line/70 rounded-xl px-4 py-3">
+            <div className="text-[10px] uppercase tracking-widest text-muted">Total émis</div>
+            <div className="text-xl font-semibold tabular-nums text-ink mt-1">{fmtFcfa(totalNet)}</div>
+          </div>
+          <div className="bg-surface border border-line/70 rounded-xl px-4 py-3">
+            <div className="text-[10px] uppercase tracking-widest text-muted">Payées</div>
+            <div className="text-xl font-semibold tabular-nums text-brick-600 mt-1">{fmtFcfa(totalPayee)}</div>
+          </div>
+          <div className="bg-surface border border-line/70 rounded-xl px-4 py-3">
+            <div className="text-[10px] uppercase tracking-widest text-muted">En attente</div>
+            <div className="text-xl font-semibold tabular-nums text-amber-600 mt-1">{nbAttente}</div>
+          </div>
+        </div>
+
+        {/* Filters */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="relative flex-1 min-w-[160px]">
+            <FileText size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted"/>
+            <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Client, N° facture…"
+              className="w-full pl-8 pr-3 py-2 text-sm bg-surface border border-line/70 rounded-xl focus:outline-none focus:border-brick-300"/>
+          </div>
+          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+            className="px-3 py-2 text-sm bg-surface border border-line/70 rounded-xl focus:outline-none focus:border-brick-300">
+            <option value="">Tous statuts</option>
+            {INVOICE_STATUSES.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+          </select>
+          <span className="text-xs text-muted">{filtered.length} facture(s)</span>
+        </div>
+
+        {invoices.length === 0 ? (
+          <div className="text-center py-16 space-y-3">
+            <div className="w-14 h-14 rounded-2xl bg-bone border border-line/50 grid place-items-center mx-auto"><FileText size={22} className="text-muted"/></div>
+            <div className="text-muted text-sm">Aucune facture émise.</div>
+            <button onClick={() => setModal('add')} className="inline-flex items-center gap-2 px-4 py-2 bg-brick-500 hover:bg-brick-600 text-white text-sm font-medium rounded-xl">
+              <Plus size={14}/> Nouvelle facture
+            </button>
+          </div>
+        ) : (
+          <Card>
+            {/* Desktop */}
+            <div className="hidden lg:block overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-line/70 text-[10px] uppercase tracking-[0.12em] text-muted">
+                    <th className="text-left py-2.5 px-5 font-medium">N°</th>
+                    <th className="text-left py-2.5 px-3 font-medium">Client</th>
+                    <th className="text-left py-2.5 px-3 font-medium">Boutique</th>
+                    <th className="text-left py-2.5 px-3 font-medium">Articles</th>
+                    <th className="text-right py-2.5 px-3 font-medium">Net à payer</th>
+                    <th className="text-left py-2.5 px-3 font-medium">Statut</th>
+                    <th className="text-left py-2.5 px-3 font-medium">Date</th>
+                    <th className="w-12 py-2.5 px-5"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(inv => (
+                    <tr key={inv.id} className="border-b border-line/40 last:border-0 hover:bg-bone/50">
+                      <td className="py-3 px-5 font-mono text-xs text-brick-500 font-semibold">{inv.id}</td>
+                      <td className="px-3 font-medium text-ink">{inv.client}</td>
+                      <td className="px-3 text-muted text-xs">{inv.shop || '—'}</td>
+                      <td className="px-3 text-muted text-xs max-w-[160px] truncate">{inv.lineItems?.map(l => `${l.name} ×${l.qty}`).join(', ') || inv.description || '—'}</td>
+                      <td className="px-3 text-right tabular-nums font-semibold text-brick-600">{fmtFcfa(inv.net ?? inv.total ?? 0)}</td>
+                      <td className="px-3">
+                        <select value={inv.status} onChange={e => changeStatus(inv.id, e.target.value)}
+                          className="text-xs border border-line/50 rounded-lg px-2 py-1 bg-surface focus:outline-none">
+                          {INVOICE_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </td>
+                      <td className="px-3 text-muted text-xs">{inv.date}</td>
+                      <td className="px-5">
+                        <ActionMenu actions={[
+                          { label: 'Modifier',   icon: Edit2,     onClick: () => setModal(inv) },
+                          { label: 'Voir / Imprimer', icon: Eye,  onClick: () => setPreviewInv(inv) },
+                          { label: 'Partager',   icon: Share2,    onClick: () => handleShare(inv) },
+                          'divider',
+                          { label: 'Supprimer',  icon: Trash2,    onClick: () => setToDelete(inv), danger: true },
+                        ]}/>
+                      </td>
+                    </tr>
+                  ))}
+                  {filtered.length === 0 && <tr><td colSpan={8} className="py-8 text-center text-muted text-sm">Aucun résultat.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile */}
+            <ul className="lg:hidden divide-y divide-line/50">
+              {filtered.map(inv => (
+                <li key={inv.id} className="px-4 py-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-mono text-xs text-brick-500 font-semibold">{inv.id}</span>
+                        <span className="font-medium text-ink">{inv.client}</span>
+                      </div>
+                      {inv.shop && <div className="text-xs text-muted mt-0.5">{inv.shop}</div>}
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <span className="font-bold tabular-nums text-brick-600">{fmtFcfa(inv.net ?? inv.total ?? 0)}</span>
+                        <Badge tone={STATUS_TONE[inv.status] || 'soft'} size="xs">{inv.status}</Badge>
+                      </div>
+                    </div>
+                    <ActionMenu actions={[
+                      { label: 'Modifier',       icon: Edit2,    onClick: () => setModal(inv) },
+                      { label: 'Voir / Imprimer', icon: Eye, onClick: () => setPreviewInv(inv) },
+                      { label: 'Partager',       icon: Share2,   onClick: () => handleShare(inv) },
+                      { label: 'Marquer payée',   icon: null, onClick: () => changeStatus(inv.id, 'payée'),   disabled: inv.status === 'payée' },
+                      { label: 'Marquer attente', icon: null, onClick: () => changeStatus(inv.id, 'attente'), disabled: inv.status === 'attente' },
+                      'divider',
+                      { label: 'Supprimer', icon: Trash2, onClick: () => setToDelete(inv), danger: true },
+                    ]}/>
+                  </div>
+                </li>
+              ))}
+              {filtered.length === 0 && <li className="py-8 text-center text-muted text-sm">Aucun résultat.</li>}
+            </ul>
+          </Card>
+        )}
+      </div>
     </div>
   );
 }
