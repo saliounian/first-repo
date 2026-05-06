@@ -46,7 +46,7 @@ const PRINT_STYLES = `
   @media print { body{padding:20px} .no-print{display:none} }
 `;
 
-export function printHTML({ title = 'gestCopta', body }) {
+export function printHTML({ title = 'Salih Holding', body }) {
   const w = window.open('', '_blank', 'width=820,height=1000');
   if (!w) return;
   w.document.write(`<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>${title}</title><style>${PRINT_STYLES}</style></head><body>${body}<div class="no-print" style="margin-top:32px;text-align:right"><button onclick="window.print()" style="padding:8px 16px;background:#0d5c2e;color:#fff;border:0;border-radius:8px;cursor:pointer;font-size:14px">Imprimer</button></div></body></html>`);

@@ -1,7 +1,7 @@
 {
-  "name": "gestcopta",
+  "name": "salih-holding",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
     "dev": "concurrently --kill-others \"npm:vite\" \"npm:server\"",

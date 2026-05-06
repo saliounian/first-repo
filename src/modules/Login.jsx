@@ -45,7 +45,7 @@ function ForgotPassword({ onBack }) {
         <div className="space-y-1.5">
           <label className="block text-[10px] uppercase tracking-wider text-muted">Adresse email</label>
           <input type="email" autoFocus required value={email} onChange={e => setEmail(e.target.value)}
-            placeholder="prenom@gestcopta.sn"
+            placeholder="prenom@salihholding.sn"
             className="w-full px-3 py-2.5 text-sm border border-line/70 rounded-lg bg-surface text-ink placeholder:text-muted/60 focus:outline-none focus:border-brick-500 focus:ring-1 focus:ring-brick-500/20"/>
         </div>
         <button type="submit" disabled={loading || !email}
@@ -84,8 +84,8 @@ export default function Login() {
     <div className="min-h-screen bg-bone flex flex-col">
       <div className="flex items-center justify-between px-6 py-4">
         <div className="flex items-center gap-2">
-          <div className="w-7 h-7 rounded-lg bg-brick-500 text-white grid place-items-center font-bold text-sm select-none">g</div>
-          <span className="font-semibold tracking-tight text-ink">gestCopta</span>
+          <div className="w-7 h-7 rounded-lg bg-brick-500 text-white grid place-items-center font-bold text-sm select-none">S</div>
+          <span className="font-semibold tracking-tight text-ink">Salih Holding</span>
         </div>
         <ThemeToggle variant="icon"/>
       </div>
@@ -96,7 +96,7 @@ export default function Login() {
         ) : (
           <div className="w-full max-w-sm fade-in">
             <div className="mb-8 text-center">
-              <div className="w-14 h-14 rounded-2xl bg-brick-500 text-white grid place-items-center font-bold text-2xl mx-auto mb-4 shadow-card">g</div>
+              <div className="w-14 h-14 rounded-2xl bg-brick-500 text-white grid place-items-center font-bold text-2xl mx-auto mb-4 shadow-card">S</div>
               <h1 className="text-2xl font-semibold text-ink">Connexion</h1>
               <p className="text-sm text-muted mt-1">Accédez à votre espace de travail</p>
             </div>
@@ -105,7 +105,7 @@ export default function Login() {
               <div className="space-y-1.5">
                 <label className="block text-[10px] uppercase tracking-wider text-muted">Adresse email</label>
                 <input type="email" autoComplete="email" autoFocus required value={email} onChange={e => setEmail(e.target.value)}
-                  placeholder="prenom@gestcopta.sn"
+                  placeholder="prenom@salihholding.sn"
                   className="w-full px-3 py-2.5 text-sm border border-line/70 rounded-lg bg-surface text-ink placeholder:text-muted/60 focus:outline-none focus:border-brick-500 focus:ring-1 focus:ring-brick-500/20"/>
               </div>
 

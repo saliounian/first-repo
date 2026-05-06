@@ -71,7 +71,7 @@ function exportReport(id, mode, storeData) {
       title: r.title,
       body: `
         <div class="header">
-          <div><div class="brand">gestCopta</div><h1>${r.title}</h1><div class="muted">${r.summary}</div></div>
+          <div><div class="brand">Salih Holding</div><h1>${r.title}</h1><div class="muted">${r.summary}</div></div>
           <div class="meta"><div class="muted">Édité le</div><div>${fmtDate()}</div></div>
         </div>
         <table>

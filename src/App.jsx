@@ -36,7 +36,7 @@ function ModuleSpinner() {
   return (
     <div className="min-h-[60vh] flex items-center justify-center">
       <div className="flex flex-col items-center gap-3">
-        <div className="w-10 h-10 rounded-xl bg-brick-500 text-white grid place-items-center font-bold animate-pulse">g</div>
+        <div className="w-10 h-10 rounded-xl bg-brick-500 text-white grid place-items-center font-bold animate-pulse">S</div>
         <div className="text-xs text-muted">Chargement…</div>
       </div>
     </div>
@@ -65,7 +65,7 @@ function AppShell() {
     return (
       <div className="min-h-screen bg-bone flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-brick-500 text-white grid place-items-center font-bold text-lg">g</div>
+          <div className="w-10 h-10 rounded-xl bg-brick-500 text-white grid place-items-center font-bold text-lg">S</div>
           <div className="text-sm text-muted animate-pulse">Chargement…</div>
         </div>
       </div>

@@ -1,5 +1,5 @@
 /**
- * gestCopta — central data store
+ * Salih Holding — central data store
  * All initial values are EMPTY — user fills data through the UI.
  */
 

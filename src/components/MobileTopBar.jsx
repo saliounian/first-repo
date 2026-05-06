@@ -14,7 +14,7 @@ export default function MobileTopBar({ alerts = 3, subtitle = 'LUN. 28 AVRIL · 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg bg-brick-500 text-white grid place-items-center font-bold text-sm">{letter}</div>
-            <div className="font-semibold tracking-tight text-ink">gestCopta</div>
+            <div className="font-semibold tracking-tight text-ink">Salih Holding</div>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle variant="icon" />

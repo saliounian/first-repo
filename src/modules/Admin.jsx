@@ -405,7 +405,7 @@ function UserModal({ editUser, onClose, onSaved }) {
               </Field>
               <Field label="Email *">
                 <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
-                  className="field-input" placeholder="prenom@gestcopta.sn" />
+                  className="field-input" placeholder="prenom@salihholding.sn" />
               </Field>
               <Field label={isEdit ? 'Nouveau mot de passe (laisser vide = inchangé)' : 'Mot de passe temporaire *'}>
                 <input type="password" value={pwd} onChange={e => setPwd(e.target.value)}

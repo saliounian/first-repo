@@ -37,8 +37,8 @@ export default function Sidebar({ route, setRoute }) {
     <aside className="hidden lg:flex w-64 shrink-0 bg-sand/60 border-r border-line/70 flex-col h-screen sticky top-0">
       {/* Logo */}
       <div className="px-5 pt-6 pb-7 flex items-center gap-2.5">
-        <div className="w-9 h-9 rounded-xl bg-brick-500 text-white grid place-items-center font-bold text-base">g</div>
-        <div className="font-semibold tracking-tight text-ink text-lg">gestCopta</div>
+        <div className="w-9 h-9 rounded-xl bg-brick-500 text-white grid place-items-center font-bold text-base">S</div>
+        <div className="font-semibold tracking-tight text-ink text-lg">Salih Holding</div>
       </div>
 
       {/* Nav */}

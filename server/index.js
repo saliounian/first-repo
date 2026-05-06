@@ -41,6 +41,6 @@ app.use((err, _req, res, _next) => {
 if (process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 3001;
   app.listen(PORT, () => {
-    console.log(`\n✅  gestCopta API  →  http://localhost:${PORT}`);
+    console.log(`\n✅  Salih Holding API  →  http://localhost:${PORT}`);
   });
 }
