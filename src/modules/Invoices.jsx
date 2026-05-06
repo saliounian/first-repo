@@ -158,31 +158,73 @@ function buildInvoiceDoc(inv, shop) {
   return `<!doctype html><html lang="fr"><head><meta charset="utf-8"><title>Facture ${esc(inv.id)}</title><style>${INVOICE_CSS}</style></head><body>${buildInvoiceHTML(inv, shop)}</body></html>`;
 }
 
-// ─── Invoice Preview Modal (iframe inline, no popup) ─────────────────────────
+// ─── Invoice Preview Modal (iframe inline + PDF download) ────────────────────
 function InvoicePreviewModal({ inv, shop, onShare, onClose }) {
   const doc = buildInvoiceDoc(inv, shop);
+  const [busy, setBusy] = useState(false);
 
   function printIt() {
-    // Trouver l'iframe et imprimer son contenu
     const iframe = document.getElementById('invoice-preview-iframe');
     if (!iframe?.contentWindow) { toast.error('Erreur impression'); return; }
     iframe.contentWindow.focus();
     iframe.contentWindow.print();
   }
 
+  async function downloadPDF() {
+    const iframe = document.getElementById('invoice-preview-iframe');
+    if (!iframe) return;
+    setBusy(true);
+    try {
+      const { iframeToPDFBlob, downloadPDFBlob } = await import('../utils/invoicePDF.js');
+      const blob = await iframeToPDFBlob(iframe);
+      await downloadPDFBlob(blob, `Facture-${(inv.id || '').replace('#', '')}.pdf`);
+      toast.success('PDF téléchargé');
+    } catch (e) {
+      console.error(e);
+      toast.error('Erreur génération PDF');
+    } finally { setBusy(false); }
+  }
+
+  async function sharePDF() {
+    const iframe = document.getElementById('invoice-preview-iframe');
+    if (!iframe) return;
+    setBusy(true);
+    try {
+      const { iframeToPDFBlob, sharePDFFile, downloadPDFBlob } = await import('../utils/invoicePDF.js');
+      const blob = await iframeToPDFBlob(iframe);
+      const filename = `Facture-${(inv.id || '').replace('#', '')}.pdf`;
+      const text     = `Facture ${inv.id} — ${shop?.name || ''} — Net à payer : ${fmtFcfa(inv.net ?? inv.total ?? 0)}`;
+      const ok = await sharePDFFile(blob, filename, `Facture ${inv.id}`, text);
+      if (!ok) {
+        // Fallback : download + open share modal text
+        await downloadPDFBlob(blob, filename);
+        toast.success('PDF téléchargé — joignez-le au message');
+        onShare(inv);
+      }
+    } catch (e) {
+      console.error(e);
+      toast.error('Erreur partage PDF');
+    } finally { setBusy(false); }
+  }
+
   return (
     <div className="fixed inset-0 bg-black/60 z-[55] overflow-y-auto py-4 px-2 lg:px-4 flex items-start lg:items-center justify-center" onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="bg-surface rounded-2xl shadow-xl w-full max-w-3xl my-auto flex flex-col" style={{ maxHeight: '95vh' }}>
-        <div className="flex items-center justify-between px-5 py-3 border-b border-line/70">
-          <div>
-            <div className="font-semibold text-ink">Aperçu facture {inv.id}</div>
-            <div className="text-xs text-muted">{inv.client} · {fmtFcfa(inv.net ?? inv.total ?? 0)}</div>
+        <div className="flex items-center justify-between px-5 py-3 border-b border-line/70 gap-2 flex-wrap">
+          <div className="min-w-0">
+            <div className="font-semibold text-ink truncate">Aperçu facture {inv.id}</div>
+            <div className="text-xs text-muted truncate">{inv.client} · {fmtFcfa(inv.net ?? inv.total ?? 0)}</div>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={printIt} className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-sm border border-line/70 rounded-lg hover:bg-bone">
-              <Download size={13}/> Imprimer / PDF
+          <div className="flex items-center gap-2 flex-wrap">
+            <button disabled={busy} onClick={downloadPDF}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-line/70 rounded-lg hover:bg-bone disabled:opacity-50">
+              <Download size={13}/> {busy ? 'PDF…' : 'PDF'}
             </button>
-            <button onClick={() => onShare(inv)} className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-brick-500 hover:bg-brick-600 text-white rounded-lg">
+            <button onClick={printIt} className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-sm border border-line/70 rounded-lg hover:bg-bone">
+              <FileText size={13}/> Imprimer
+            </button>
+            <button disabled={busy} onClick={sharePDF}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-brick-500 hover:bg-brick-600 disabled:opacity-50 text-white rounded-lg">
               <Share2 size={13}/> Partager
             </button>
             <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-sand text-muted"><X size={15}/></button>
@@ -191,11 +233,6 @@ function InvoicePreviewModal({ inv, shop, onShare, onClose }) {
         <div className="flex-1 overflow-auto bg-bone p-2 lg:p-4 grid place-items-start">
           <iframe id="invoice-preview-iframe" srcDoc={doc} title="Facture"
             className="bg-white shadow-lg" style={{ width: '794px', maxWidth: '100%', height: '1123px', border: '0' }}/>
-        </div>
-        <div className="sm:hidden px-5 py-3 border-t border-line/70">
-          <button onClick={printIt} className="w-full flex items-center justify-center gap-2 py-2.5 border border-line/70 rounded-xl text-sm font-medium hover:bg-bone">
-            <Download size={14}/> Imprimer / Enregistrer PDF
-          </button>
         </div>
       </div>
     </div>
