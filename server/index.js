@@ -6,6 +6,7 @@ import authRoutes  from './routes/auth.js';
 import usersRoutes from './routes/users.js';
 import rolesRoutes from './routes/roles.js';
 import logsRoutes  from './routes/logs.js';
+import dataRoutes  from './routes/data.js';
 
 export const app = express();
 
@@ -27,6 +28,7 @@ app.use('/api/auth',  authRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/roles', rolesRoutes);
 app.use('/api/logs',  logsRoutes);
+app.use('/api/data',  dataRoutes);
 
 app.get('/api/health', (_req, res) => res.json({ ok: true, ts: new Date().toISOString() }));
 

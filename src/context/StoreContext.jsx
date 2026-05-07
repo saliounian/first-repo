@@ -1,59 +1,180 @@
-import { createContext, useContext, useMemo } from 'react';
-import { usePersistedState } from '../utils/usePersistedState.js';
+import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from './AuthContext.jsx';
-import { KEYS, INIT } from '../data/store.js';
+import { dataApi } from '../utils/api.js';
 
 const StoreContext = createContext(null);
 
+/**
+ * Build a setter that:
+ *  - applies an updater function locally (optimistic)
+ *  - syncs with the backend (upsert/delete based on diff)
+ *  - on error, refetches from server to recover
+ *
+ * Items are identified by `id`. Diff = added/updated rows + removed rows.
+ */
+function makeSyncedSetter({ entity, items, setItems, fetchAll }) {
+  return (updater) => {
+    const next = typeof updater === 'function' ? updater(items) : updater;
+    const prev = items;
+    setItems(next); // optimistic
+
+    const prevIds = new Set(prev.map(x => x.id));
+    const nextIds = new Set(next.map(x => x.id));
+
+    // Removed
+    const removed = prev.filter(x => !nextIds.has(x.id));
+    // Added or changed
+    const upserts = next.filter(x => {
+      const old = prev.find(p => p.id === x.id);
+      return !old || JSON.stringify(old) !== JSON.stringify(x);
+    });
+
+    Promise.all([
+      ...removed.map(x => dataApi.remove(entity, x.id)),
+      ...upserts.map(x => dataApi.upsert(entity, x)),
+    ]).catch(async (e) => {
+      console.error(`[StoreContext] sync ${entity} failed`, e);
+      // Recover from server state
+      try {
+        const server = await fetchAll();
+        setItems(server);
+      } catch {}
+    });
+  };
+}
+
 export function StoreProvider({ children }) {
-  const { allowedShops, user } = useAuth();
+  const { user, loading: authLoading, allowedShops } = useAuth();
 
-  const [shops,        setShops]        = usePersistedState(KEYS.shops,        INIT.shops);
-  const [products,     setProducts]     = usePersistedState(KEYS.products,     INIT.products);
-  const [stockPoints,  setStockPoints]  = usePersistedState(KEYS.stockPoints,  INIT.stockPoints);
-  const [stockByPoint, setStockByPoint] = usePersistedState(KEYS.stockByPoint, INIT.stockByPoint);
-  const [clients,      setClients]      = usePersistedState(KEYS.clients,      INIT.clients);
-  const [orders,       setOrders]       = usePersistedState(KEYS.orders,       INIT.orders);
-  const [invoices,     setInvoices]     = usePersistedState(KEYS.invoices,     INIT.invoices);
-  const [transfers,    setTransfers]    = usePersistedState(KEYS.transfers,    INIT.transfers);
-  const [categories,   setCategories]   = usePersistedState(KEYS.categories,   INIT.categories);
+  const [shops,        setShopsState]        = useState([]);
+  const [products,     setProductsState]     = useState([]);
+  const [stockPoints,  setStockPointsState]  = useState([]);
+  const [stockByPoint, setStockByPointState] = useState({});
+  const [clients,      setClientsState]      = useState([]);
+  const [orders,       setOrdersState]       = useState([]);
+  const [invoices,     setInvoicesState]     = useState([]);
+  const [transfers,    setTransfersState]    = useState([]);
+  const [categories,   setCategoriesState]   = useState([]);
+  const [loading,      setLoading]           = useState(true);
 
-  // ─── Shop access filter ───────────────────────────────────────────────────
-  // [] = toutes boutiques (admin ou pas de restriction)
-  const isRestricted = allowedShops.length > 0 && user?.role !== 'admin';
-  const allowedSet   = useMemo(() => new Set(allowedShops), [allowedShops]);
+  // ─── Initial fetch on user change ─────────────────────────────────────────
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      // Clear state on logout
+      setShopsState([]); setProductsState([]); setStockPointsState([]);
+      setStockByPointState({}); setClientsState([]); setOrdersState([]);
+      setInvoicesState([]); setTransfersState([]); setCategoriesState([]);
+      setLoading(false);
+      return;
+    }
 
-  function shopAllowed(shopId) {
-    return !isRestricted || allowedSet.has(shopId);
-  }
+    let cancelled = false;
+    setLoading(true);
+    Promise.all([
+      dataApi.list('shops'),
+      dataApi.list('products'),
+      dataApi.list('stock-points'),
+      dataApi.getStock(),
+      dataApi.list('clients'),
+      dataApi.list('orders'),
+      dataApi.list('invoices'),
+      dataApi.list('transfers'),
+      dataApi.list('categories'),
+    ]).then(([s, p, sp, sbp, c, o, inv, t, cat]) => {
+      if (cancelled) return;
+      setShopsState(s);
+      setProductsState(p);
+      setStockPointsState(sp);
+      setStockByPointState(sbp || {});
+      setClientsState(c);
+      setOrdersState(o);
+      setInvoicesState(inv);
+      setTransfersState(t);
+      setCategoriesState((cat || []).map(c => c.name).filter(Boolean));
+    }).catch(e => {
+      console.error('[StoreContext] initial fetch failed', e);
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
 
-  // ─── Filtered views (lecture seule) ──────────────────────────────────────
-  const visibleShops       = useMemo(() => shops.filter(s => shopAllowed(s.id)), [shops, allowedSet, isRestricted]);
+    return () => { cancelled = true; };
+  }, [user?.id, authLoading]);
+
+  // ─── Synced setters (write-through to API) ────────────────────────────────
+  const setShops        = useCallback(makeSyncedSetter({ entity: 'shops',         items: shops,        setItems: setShopsState,        fetchAll: () => dataApi.list('shops') }),         [shops]);
+  const setProducts     = useCallback(makeSyncedSetter({ entity: 'products',      items: products,     setItems: setProductsState,     fetchAll: () => dataApi.list('products') }),      [products]);
+  const setStockPoints  = useCallback(makeSyncedSetter({ entity: 'stock-points',  items: stockPoints,  setItems: setStockPointsState,  fetchAll: () => dataApi.list('stock-points') }),  [stockPoints]);
+  const setClients      = useCallback(makeSyncedSetter({ entity: 'clients',       items: clients,      setItems: setClientsState,      fetchAll: () => dataApi.list('clients') }),       [clients]);
+  const setOrders       = useCallback(makeSyncedSetter({ entity: 'orders',        items: orders,       setItems: setOrdersState,       fetchAll: () => dataApi.list('orders') }),        [orders]);
+  const setInvoices     = useCallback(makeSyncedSetter({ entity: 'invoices',      items: invoices,     setItems: setInvoicesState,     fetchAll: () => dataApi.list('invoices') }),      [invoices]);
+  const setTransfers    = useCallback(makeSyncedSetter({ entity: 'transfers',     items: transfers,    setItems: setTransfersState,    fetchAll: () => dataApi.list('transfers') }),     [transfers]);
+
+  // Categories use {name} as PK — special setter (replace strategy)
+  const setCategories = useCallback((updater) => {
+    const next = typeof updater === 'function' ? updater(categories) : updater;
+    const prev = categories;
+    setCategoriesState(next);
+    const added = next.filter(n => !prev.includes(n));
+    const removed = prev.filter(n => !next.includes(n));
+    Promise.all([
+      ...removed.map(n => dataApi.remove('categories', n)),
+      ...added.map(n => dataApi.upsert('categories', { name: n })),
+    ]).catch(e => console.error('[categories]', e));
+  }, [categories]);
+
+  // Stock by point — bulk replace strategy via PUT /data/stock
+  const setStockByPoint = useCallback((updater) => {
+    const next = typeof updater === 'function' ? updater(stockByPoint) : updater;
+    setStockByPointState(next);
+    dataApi.putStock(next).catch(e => console.error('[stock]', e));
+  }, [stockByPoint]);
+
+  // ─── Shop access filter (frontend safety) ─────────────────────────────────
+  const isRestricted = (allowedShops?.length || 0) > 0 && user?.role !== 'admin';
+  const allowedSet   = useMemo(() => new Set(allowedShops || []), [allowedShops]);
+  const visibleShops       = useMemo(() => isRestricted ? shops.filter(s => allowedSet.has(s.id)) : shops, [shops, allowedSet, isRestricted]);
   const visibleShopIds     = useMemo(() => new Set(visibleShops.map(s => s.id)), [visibleShops]);
   const visibleStockPoints = useMemo(() => stockPoints.filter(sp => visibleShopIds.has(sp.shopId)), [stockPoints, visibleShopIds]);
   const visibleOrders      = useMemo(() => orders.filter(o => !o.shopId || visibleShopIds.has(o.shopId)), [orders, visibleShopIds]);
   const visibleInvoices    = useMemo(() => invoices.filter(i => !i.shopId || visibleShopIds.has(i.shopId)), [invoices, visibleShopIds]);
   const visibleTransfers   = useMemo(() => transfers.filter(t => !t.fromShopId || visibleShopIds.has(t.fromShopId)), [transfers, visibleShopIds]);
-  // Clients: filtrés par boutiques des commandes passées
   const visibleClientIds   = useMemo(() => new Set(visibleOrders.map(o => o.clientId).filter(Boolean)), [visibleOrders]);
   const visibleClients     = useMemo(() =>
     isRestricted ? clients.filter(c => visibleClientIds.has(c.id)) : clients,
     [clients, visibleClientIds, isRestricted]
   );
 
+  // ─── Stock helpers ────────────────────────────────────────────────────────
+  function totalStockForProduct(productId) {
+    const row = stockByPoint[productId] || {};
+    return Object.values(row).reduce((s, v) => s + v, 0);
+  }
+  function totalStockForShop(shopId) {
+    const pts = visibleStockPoints.filter(sp => sp.shopId === shopId).map(sp => sp.id);
+    return products.reduce((sum, p) => {
+      const row = stockByPoint[p.id] || {};
+      return sum + pts.reduce((s, spId) => s + (row[spId] || 0), 0);
+    }, 0);
+  }
+  function stockForPoint(spId) {
+    return products.reduce((sum, p) => sum + ((stockByPoint[p.id] || {})[spId] || 0), 0);
+  }
+  function stockForProductByShop(productId, shopId) {
+    const pts = visibleStockPoints.filter(sp => sp.shopId === shopId).map(sp => sp.id);
+    const row = stockByPoint[productId] || {};
+    return pts.reduce((s, spId) => s + (row[spId] || 0), 0);
+  }
+
   // ─── Stock consume / restore (livraison de commande) ─────────────────────
-  // Chaque lineItem PORTE son pointId explicite : on déduit du point indiqué.
-  // Synchronise aussi stockPoints[*].stockVendu et stockActuel (agrégats).
-  // Retourne breakdown { productId: { pointId: qty } } pour pouvoir restaurer.
   function consumeStockForOrder(lineItems, shopId) {
     const breakdown = {};
-    const pointDelta = {}; // { pointId: totalQty } pour MAJ aggregates
+    const pointDelta = {};
 
-    setStockByPoint(prev => {
+    setStockByPointState(prev => {
       const next = { ...prev };
       for (const item of lineItems) {
         const row = { ...(next[item.productId] || {}) };
-        // Privilégier le pointId explicite ; fallback FIFO si absent (anciennes commandes)
         const targetPoint = item.pointId
           || (stockPoints.filter(sp => sp.shopId === shopId).sort((a, b) => (row[b.id] || 0) - (row[a.id] || 0))[0]?.id);
         if (!targetPoint) continue;
@@ -63,28 +184,25 @@ export function StoreProvider({ children }) {
         pointDelta[targetPoint] = (pointDelta[targetPoint] || 0) + item.qty;
         next[item.productId] = row;
       }
+      // Persist to backend
+      dataApi.putStock(next).catch(e => console.error('[stock consume]', e));
       return next;
     });
 
-    // MAJ aggregates stockPoints : stockVendu += qty, stockActuel -= qty
+    // Update aggregates on stock_points (vendu / actuel)
     setStockPoints(prev => prev.map(sp => {
       const d = pointDelta[sp.id];
       if (!d) return sp;
-      return {
-        ...sp,
-        stockVendu:  (sp.stockVendu  || 0) + d,
-        stockActuel: (sp.stockActuel || 0) - d,
-      };
+      return { ...sp, stockVendu: (sp.stockVendu || 0) + d, stockActuel: (sp.stockActuel || 0) - d };
     }));
 
     return breakdown;
   }
 
-  // Restaure le stock à partir d'un breakdown précédemment retourné par consumeStockForOrder
   function restoreStockFromBreakdown(breakdown) {
     if (!breakdown) return;
     const pointDelta = {};
-    setStockByPoint(prev => {
+    setStockByPointState(prev => {
       const next = { ...prev };
       for (const productId in breakdown) {
         const row = { ...(next[productId] || {}) };
@@ -95,70 +213,39 @@ export function StoreProvider({ children }) {
         }
         next[productId] = row;
       }
+      dataApi.putStock(next).catch(e => console.error('[stock restore]', e));
       return next;
     });
-
-    // Restaurer aggregates : stockVendu -= qty, stockActuel += qty
     setStockPoints(prev => prev.map(sp => {
       const d = pointDelta[sp.id];
       if (!d) return sp;
-      return {
-        ...sp,
-        stockVendu:  Math.max(0, (sp.stockVendu  || 0) - d),
-        stockActuel: (sp.stockActuel || 0) + d,
-      };
+      return { ...sp, stockVendu: Math.max(0, (sp.stockVendu || 0) - d), stockActuel: (sp.stockActuel || 0) + d };
     }));
-  }
-
-  // ─── Helpers ──────────────────────────────────────────────────────────────
-  function totalStockForProduct(productId) {
-    const row = stockByPoint[productId] || {};
-    const pts = isRestricted
-      ? visibleStockPoints.map(sp => sp.id)
-      : Object.keys(row);
-    return pts.reduce((s, spId) => s + (row[spId] || 0), 0);
-  }
-
-  function totalStockForShop(shopId) {
-    const pts = visibleStockPoints.filter(sp => sp.shopId === shopId).map(sp => sp.id);
-    return products.reduce((sum, p) => {
-      const row = stockByPoint[p.id] || {};
-      return sum + pts.reduce((s, spId) => s + (row[spId] || 0), 0);
-    }, 0);
-  }
-
-  function stockForPoint(spId) {
-    return products.reduce((sum, p) => sum + ((stockByPoint[p.id] || {})[spId] || 0), 0);
-  }
-
-  function stockForProductByShop(productId, shopId) {
-    const pts = visibleStockPoints.filter(sp => sp.shopId === shopId).map(sp => sp.id);
-    const row = stockByPoint[productId] || {};
-    return pts.reduce((s, spId) => s + (row[spId] || 0), 0);
   }
 
   return (
     <StoreContext.Provider value={{
-      // Raw setters (écriture — pour l'admin)
-      shops:        visibleShops,   setShops,
-      products,                     setProducts,
-      stockPoints:  visibleStockPoints, setStockPoints,
-      stockByPoint,                 setStockByPoint,
-      clients:      visibleClients, setClients,
-      orders:       visibleOrders,  setOrders,
-      invoices:     visibleInvoices,setInvoices,
-      transfers:    visibleTransfers,setTransfers,
-      categories,                   setCategories,
-      // Pour les menus boutique (admin voit tout, user voit les siennes)
+      // Filtered views (visible)
+      shops:        visibleShops,        setShops,
+      products,                          setProducts,
+      stockPoints:  visibleStockPoints,  setStockPoints,
+      stockByPoint,                      setStockByPoint,
+      clients:      visibleClients,      setClients,
+      orders:       visibleOrders,       setOrders,
+      invoices:     visibleInvoices,     setInvoices,
+      transfers:    visibleTransfers,    setTransfers,
+      categories,                        setCategories,
+      // Raw data (admin / lookup)
       allShops: shops,
       // helpers
       totalStockForProduct,
       totalStockForShop,
       stockForPoint,
+      stockForProductByShop,
       consumeStockForOrder,
       restoreStockFromBreakdown,
-      stockForProductByShop,
-      shopAllowed,
+      // state
+      loading,
       isRestricted,
     }}>
       {children}
