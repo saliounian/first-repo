@@ -11,10 +11,10 @@ export function Card({ children, className = '', as: Tag = 'div', ...rest }) {
 
 export function CardHeader({ title, subtitle, action }) {
   return (
-    <div className="flex items-center justify-between px-5 pt-4 pb-3">
+    <div className="flex items-center justify-between px-6 pt-5 pb-3.5">
       <div>
-        <div className="text-sm font-semibold text-ink">{title}</div>
-        {subtitle && <div className="text-xs text-muted mt-0.5">{subtitle}</div>}
+        <div className="text-base font-semibold text-ink">{title}</div>
+        {subtitle && <div className="text-sm text-muted mt-1">{subtitle}</div>}
       </div>
       {action}
     </div>
@@ -28,13 +28,13 @@ export function KpiCard({ label, value, delta, deltaTone = 'pos', sublabel, acce
     : deltaTone === 'neg' ? 'text-amber-600'
     : 'text-muted';
   return (
-    <Card className={`${accent ? 'bg-brick-50/70 border-brick-100' : ''} px-5 py-4`}>
-      <div className="text-[10px] tracking-[0.14em] text-muted uppercase">{label}</div>
-      <div className={`mt-1.5 ${large ? 'text-[28px]' : 'text-[22px]'} font-semibold tabular-nums ${accent ? 'text-brick-600' : 'text-ink'} leading-tight`}>
+    <Card className={`${accent ? 'bg-brick-50/70 border-brick-100' : ''} px-6 py-5`}>
+      <div className="text-[11px] tracking-[0.14em] text-muted uppercase font-medium">{label}</div>
+      <div className={`mt-2 ${large ? 'text-[32px]' : 'text-[26px]'} font-semibold tabular-nums ${accent ? 'text-brick-600' : 'text-ink'} leading-tight`}>
         {value}
       </div>
       {(delta || sublabel) && (
-        <div className="mt-1 flex items-center gap-2 text-xs">
+        <div className="mt-1.5 flex items-center gap-2 text-sm">
           {delta && <span className={`${toneClass} font-medium`}>{delta}</span>}
           {sublabel && <span className="text-muted">{sublabel}</span>}
         </div>
@@ -56,7 +56,7 @@ export function Badge({ children, tone = 'neutral', size = 'sm' }) {
     new:     'bg-blue-50 text-blue-700',
     soft:    'bg-bone text-ink/80'
   };
-  const sizes = size === 'xs' ? 'text-[10px] px-1.5 py-0.5' : 'text-[11px] px-2 py-0.5';
+  const sizes = size === 'xs' ? 'text-[11px] px-2 py-0.5' : 'text-[12px] px-2.5 py-1';
   return (
     <span className={`inline-flex items-center rounded-full font-medium ${tones[tone]} ${sizes}`}>
       {children}
@@ -252,12 +252,12 @@ export function HBarRow({ label, pct, color = '#0D5C2E', max = 100, value }) {
 // ---------------- Tabs ----------------
 export function Tabs({ tabs, value, onChange }) {
   return (
-    <div className="flex gap-1 bg-sand/80 p-1 rounded-lg w-fit overflow-x-auto no-scrollbar">
+    <div className="flex gap-1 bg-sand/80 p-1 rounded-xl w-fit overflow-x-auto no-scrollbar">
       {tabs.map((t) => (
         <button
           key={t.id}
           onClick={() => onChange(t.id)}
-          className={`px-3 py-1.5 text-sm rounded-md transition-colors whitespace-nowrap ${
+          className={`px-4 py-2 text-[15px] rounded-lg transition-colors whitespace-nowrap ${
             value === t.id ? 'bg-surface text-ink shadow-sm font-medium' : 'text-muted hover:text-ink'
           }`}
         >

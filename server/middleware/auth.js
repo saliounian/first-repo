@@ -1,150 +1,96 @@
-import db from '../db.js';
+import jwt from 'jsonwebtoken';
+import supabase from '../db.js';
 
-// ─── canDo ────────────────────────────────────────────────────────────────────
-// Checks if a user has permission for module.action.
-// User-specific overrides (user_permissions) take precedence over role defaults.
-export function canDo(userId, module, action) {
-  // 1. Explicit user-level override
-  const custom = db.prepare(`
-    SELECT up.granted
-    FROM user_permissions up
-    JOIN permissions p ON p.id = up.permission_id
-    WHERE up.user_id = ? AND p.module = ? AND p.action = ?
-  `).get(userId, module, action);
-
-  if (custom !== undefined) return custom.granted === 1;
-
-  // 2. Role-level permission
-  const rolePerm = db.prepare(`
-    SELECT 1
-    FROM users u
-    JOIN role_permissions rp ON rp.role_id = u.role_id
-    JOIN permissions p ON p.id = rp.permission_id
-    WHERE u.id = ? AND p.module = ? AND p.action = ?
-  `).get(userId, module, action);
-
-  return rolePerm !== undefined;
-}
+const JWT_SECRET = process.env.JWT_SECRET || 'gestcopta-dev-secret-change-in-prod';
 
 // ─── getUserPermissions ────────────────────────────────────────────────────────
-// Returns all granted permissions for a user as an array of "module.action" strings.
-export function getUserPermissions(userId) {
-  // Get role permissions for the user
-  const rolePerms = db.prepare(`
-    SELECT p.module, p.action
-    FROM users u
-    JOIN role_permissions rp ON rp.role_id = u.role_id
-    JOIN permissions p ON p.id = rp.permission_id
-    WHERE u.id = ?
-  `).all(userId);
+export async function getUserPermissions(userId) {
+  const { data, error } = await supabase.rpc('get_user_permissions', { p_user_id: userId });
+  if (error) { console.error('[getUserPermissions]', error); return []; }
+  return (data || []).map(p => `${p.module}.${p.action}`);
+}
 
-  // Get user-specific overrides
-  const userPerms = db.prepare(`
-    SELECT p.module, p.action, up.granted
-    FROM user_permissions up
-    JOIN permissions p ON p.id = up.permission_id
-    WHERE up.user_id = ?
-  `).all(userId);
+// ─── getUserShops ─────────────────────────────────────────────────────────────
+// Returns array of shop_ids the user can access.
+// Empty array [] = ALL shops (admin / no restriction set).
+export async function getUserShops(userId) {
+  const { data, error } = await supabase.rpc('get_user_shops', { p_user_id: userId });
+  if (error) { console.error('[getUserShops]', error); return []; }
+  return (data || []).map(r => r.shop_id);
+}
 
-  // Build set from role permissions
-  const granted = new Set(rolePerms.map(p => `${p.module}.${p.action}`));
-
-  // Apply user overrides
-  for (const p of userPerms) {
-    const key = `${p.module}.${p.action}`;
-    if (p.granted === 1) granted.add(key);
-    else granted.delete(key);
+// ─── setUserShops ─────────────────────────────────────────────────────────────
+// Replace shop assignments for a user. Pass [] for "all shops".
+export async function setUserShops(userId, shopIds) {
+  await supabase.from('user_shops').delete().eq('user_id', userId);
+  if (shopIds.length > 0) {
+    await supabase.from('user_shops').insert(shopIds.map(sid => ({ user_id: userId, shop_id: sid })));
   }
-
-  return [...granted];
 }
 
 // ─── logActivity ──────────────────────────────────────────────────────────────
-export function logActivity({ userId, userNom, userEmail, action, module,
+export async function logActivity({ userId, userNom, userEmail, action, module,
   ancienneValeur, nouvelleValeur, resultat = 'succes', raisonEchec }) {
   try {
-    db.prepare(`
-      INSERT INTO activity_logs
-        (user_id, user_nom, user_email, action, module,
-         ancienne_valeur, nouvelle_valeur, resultat, raison_echec)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      userId || null,
-      userNom || null,
-      userEmail || null,
+    await supabase.from('activity_logs').insert({
+      user_id:         userId || null,
+      user_nom:        userNom || null,
+      user_email:      userEmail || null,
       action,
       module,
-      ancienneValeur ? String(ancienneValeur) : null,
-      nouvelleValeur ? String(nouvelleValeur) : null,
+      ancienne_valeur: ancienneValeur ? String(ancienneValeur) : null,
+      nouvelle_valeur: nouvelleValeur ? String(nouvelleValeur) : null,
       resultat,
-      raisonEchec || null
-    );
+      raison_echec:    raisonEchec || null,
+    });
   } catch (e) {
-    console.error('[logActivity] Failed to write log:', e.message);
+    console.error('[logActivity]', e.message);
   }
+}
+
+// ─── issueToken ───────────────────────────────────────────────────────────────
+export function issueToken(user, res) {
+  const payload = { sub: user.id, role: user.role_nom };
+  const expiresIn = `${user.session_timeout || 30}m`;
+  const token = jwt.sign(payload, JWT_SECRET, { expiresIn });
+  res.cookie('token', token, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    maxAge: (user.session_timeout || 30) * 60 * 1000,
+  });
+  return token;
 }
 
 // ─── requireAuth ──────────────────────────────────────────────────────────────
-export function requireAuth(req, res, next) {
-  if (!req.session?.userId) {
-    return res.status(401).json({ error: 'Non authentifié. Veuillez vous connecter.' });
-  }
+export async function requireAuth(req, res, next) {
+  const token = req.cookies?.token;
+  if (!token) return res.status(401).json({ error: 'Non authentifié. Veuillez vous connecter.' });
 
-  const user = db.prepare(`
-    SELECT u.*, r.nom as role_nom
-    FROM users u
-    LEFT JOIN roles r ON r.id = u.role_id
-    WHERE u.id = ?
-  `).get(req.session.userId);
-
-  if (!user) {
-    req.session.destroy(() => {});
-    return res.status(401).json({ error: 'Utilisateur introuvable.' });
-  }
-
-  if (user.statut !== 'actif') {
-    req.session.destroy(() => {});
-    return res.status(403).json({ error: 'Compte désactivé. Contactez votre administrateur.' });
-  }
-
-  // Inactivity timeout check (per-user setting, in minutes)
-  const timeoutMs = (user.session_timeout || 30) * 60 * 1000;
-  const lastActivity = req.session.lastActivity || Date.now();
-  if (Date.now() - lastActivity > timeoutMs) {
-    logActivity({
-      userId: user.id, userNom: user.nom, userEmail: user.email,
-      action: 'Déconnexion automatique (inactivité)',
-      module: 'auth', resultat: 'succes'
-    });
-    req.session.destroy(() => {});
+  let payload;
+  try {
+    payload = jwt.verify(token, JWT_SECRET);
+  } catch {
+    res.clearCookie('token');
     return res.status(401).json({ error: 'Session expirée. Veuillez vous reconnecter.' });
   }
 
-  req.session.lastActivity = Date.now();
+  const { data, error } = await supabase.rpc('get_user_by_id', { p_id: payload.sub });
+  const user = data?.[0];
+
+  if (error || !user) {
+    res.clearCookie('token');
+    return res.status(401).json({ error: 'Utilisateur introuvable.' });
+  }
+  if (user.statut !== 'actif') {
+    res.clearCookie('token');
+    return res.status(403).json({ error: 'Compte désactivé. Contactez votre administrateur.' });
+  }
+
+  // Refresh token on activity
+  issueToken(user, res);
   req.user = user;
   next();
-}
-
-// ─── requirePermission ────────────────────────────────────────────────────────
-export function requirePermission(module, action) {
-  return (req, res, next) => {
-    if (!req.user) return res.status(401).json({ error: 'Non authentifié.' });
-
-    if (!canDo(req.user.id, module, action)) {
-      logActivity({
-        userId: req.user.id, userNom: req.user.nom, userEmail: req.user.email,
-        action: `Accès refusé : ${module}.${action}`,
-        module,
-        resultat: 'echec',
-        raisonEchec: `Permission manquante : ${module}.${action}`
-      });
-      return res.status(403).json({
-        error: `Accès refusé. Vous n'avez pas la permission : ${module}.${action}`
-      });
-    }
-
-    next();
-  };
 }
 
 // ─── requireAdmin ─────────────────────────────────────────────────────────────
@@ -153,11 +99,27 @@ export function requireAdmin(req, res, next) {
   if (req.user.role_nom !== 'admin') {
     logActivity({
       userId: req.user.id, userNom: req.user.nom, userEmail: req.user.email,
-      action: 'Accès refusé : zone admin',
-      module: 'admin', resultat: 'echec',
-      raisonEchec: 'Rôle admin requis'
+      action: 'Accès refusé : zone admin', module: 'admin',
+      resultat: 'echec', raisonEchec: 'Rôle admin requis'
     });
     return res.status(403).json({ error: 'Réservé aux administrateurs.' });
   }
   next();
+}
+
+// ─── requirePermission ────────────────────────────────────────────────────────
+export function requirePermission(module, action) {
+  return async (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'Non authentifié.' });
+    const perms = await getUserPermissions(req.user.id);
+    if (!perms.includes(`${module}.${action}`)) {
+      logActivity({
+        userId: req.user.id, userNom: req.user.nom, userEmail: req.user.email,
+        action: `Accès refusé : ${module}.${action}`, module,
+        resultat: 'echec', raisonEchec: `Permission manquante : ${module}.${action}`
+      });
+      return res.status(403).json({ error: `Accès refusé. Permission requise : ${module}.${action}` });
+    }
+    next();
+  };
 }

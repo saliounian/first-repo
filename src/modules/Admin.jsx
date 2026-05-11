@@ -4,6 +4,7 @@ import {
   Search, ChevronDown, Loader2, X, Check, AlertCircle, Download
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
+import { useStore } from '../context/StoreContext.jsx';
 import { Card } from '../components/ui.jsx';
 import MobileTopBar from '../components/MobileTopBar.jsx';
 import { AccessDenied } from '../components/Gate.jsx';
@@ -90,7 +91,18 @@ function UsersPanel({ me }) {
   const [users, setUsers]       = useState([]);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
-  const [modalUser, setModal]   = useState(null); // null = closed, 'new' = create, object = edit
+  const [modalUser, setModal]   = useState(null); // null | 'new' | full-user-object
+
+  // Fetch full user (avec allowedShops) avant d'ouvrir modal édition
+  async function openEdit(u) {
+    try {
+      const res  = await api(`/users/${u.id}`);
+      const full = await res.json();
+      setModal(res.ok ? full : u);
+    } catch {
+      setModal(u); // fallback
+    }
+  }
 
   const load = useCallback(() => {
     setLoading(true);
@@ -153,7 +165,7 @@ function UsersPanel({ me }) {
                     </div>
                   </div>
                   <div className="flex gap-1">
-                    <button onClick={() => setModal(u)} className="w-8 h-8 grid place-items-center rounded hover:bg-brick-50 text-muted hover:text-brick-600"><Pencil size={13} /></button>
+                    <button onClick={() => openEdit(u)} className="w-8 h-8 grid place-items-center rounded hover:bg-brick-50 text-muted hover:text-brick-600"><Pencil size={13} /></button>
                     {u.id !== me?.id && (
                       <button onClick={() => toggleUser(u)} className={`w-8 h-8 grid place-items-center rounded ${u.statut === 'actif' ? 'hover:bg-rose-50 text-muted hover:text-rose-600' : 'hover:bg-brick-50 text-muted hover:text-brick-600'}`}>
                         {u.statut === 'actif' ? <PowerOff size={13} /> : <Power size={13} />}
@@ -198,7 +210,7 @@ function UsersPanel({ me }) {
                       <td className="px-4 text-muted text-[12px]">{u.session_timeout} min</td>
                       <td className="px-4 text-right">
                         <div className="inline-flex items-center gap-1 text-muted">
-                          <button onClick={() => setModal(u)} title="Modifier"
+                          <button onClick={() => openEdit(u)} title="Modifier"
                             className="w-7 h-7 grid place-items-center hover:bg-brick-50 hover:text-brick-600 rounded transition-colors">
                             <Pencil size={12} />
                           </button>
@@ -240,23 +252,40 @@ function UsersPanel({ me }) {
 
 // ─── UserModal ────────────────────────────────────────────────────────────────
 function UserModal({ editUser, onClose, onSaved }) {
-  const isEdit = Boolean(editUser);
+  const isEdit  = Boolean(editUser);
+  const { allShops } = useStore(); // toutes boutiques (pas filtrées)
 
   const [roles, setRoles]       = useState([]);
-  const [allPerms, setAllPerms] = useState([]);   // all available permissions
-  const [rolePerms, setRolePerms] = useState([]); // permissions granted by selected role
-  const [checked, setChecked]   = useState({});   // { permId: true/false }
+  const [allPerms, setAllPerms] = useState([]);
+  const [rolePerms, setRolePerms] = useState([]);
+  const [checked, setChecked]   = useState({});
 
-  const [nom, setNom]         = useState(editUser?.nom || '');
-  const [email, setEmail]     = useState(editUser?.email || '');
-  const [pwd, setPwd]         = useState('');
-  const [roleId, setRoleId]   = useState(editUser?.role_id || '');
-  const [statut, setStatut]   = useState(editUser?.statut || 'actif');
-  const [timeout, setTimeout_] = useState(editUser?.session_timeout || 30);
+  const [nom, setNom]           = useState(editUser?.nom || '');
+  const [email, setEmail]       = useState(editUser?.email || '');
+  const [pwd, setPwd]           = useState('');
+  const [roleId, setRoleId]     = useState(editUser?.role_id || '');
+  const [statut, setStatut]     = useState(editUser?.statut || 'actif');
+  const [timeout, setTimeout_]  = useState(editUser?.session_timeout || 30);
+  // allowedShops: [] = toutes boutiques, sinon liste IDs
+  const [shopAccess, setShopAccess] = useState('all'); // 'all' | 'select'
+  const [selectedShops, setSelectedShops] = useState(
+    editUser?.allowedShops?.length > 0 ? editUser.allowedShops : []
+  );
 
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
+  // Si l'utilisateur a des boutiques assignées, passer en mode 'select'
+  useEffect(() => {
+    if (editUser?.allowedShops?.length > 0) setShopAccess('select');
+  }, []);
+
+  const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState('');
   const [initDone, setInitDone] = useState(false);
+
+  function toggleShop(shopId) {
+    setSelectedShops(prev =>
+      prev.includes(shopId) ? prev.filter(id => id !== shopId) : [...prev, shopId]
+    );
+  }
 
   // Load roles and permissions
   useEffect(() => {
@@ -281,10 +310,9 @@ function UserModal({ editUser, onClose, onSaved }) {
           // Initialize checkboxes: role defaults + custom user overrides
           const initial = {};
           if (isEdit && editUser.customPerms) {
-            // Start from role defaults
             rp.forEach(p => { initial[p.id] = true; });
-            // Apply custom overrides
-            editUser.customPerms.forEach(cp => { initial[cp.id] = cp.granted === 1; });
+            // Supabase returns boolean; SQLite returned 0/1 — handle both
+            editUser.customPerms.forEach(cp => { initial[cp.id] = cp.granted === true || cp.granted === 1; });
           } else {
             rp.forEach(p => { initial[p.id] = true; });
           }
@@ -334,6 +362,7 @@ function UserModal({ editUser, onClose, onSaved }) {
         nom, email, roleId: parseInt(roleId), statut,
         sessionTimeout: parseInt(timeout),
         customPerms: getCustomPerms(),
+        allowedShops: shopAccess === 'all' ? [] : selectedShops,
         ...(pwd ? { password: pwd, newPassword: pwd } : {})
       };
       const res = await api(
@@ -351,9 +380,9 @@ function UserModal({ editUser, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end lg:items-center justify-center bg-black/50 backdrop-blur-sm slide-in" onClick={onClose}>
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-sm slide-in flex items-end lg:items-start justify-center lg:py-6" onClick={onClose}>
       <div onClick={e => e.stopPropagation()}
-        className="bg-surface w-full lg:rounded-2xl lg:max-w-[700px] lg:shadow-pop h-full lg:h-auto lg:max-h-[90vh] overflow-y-auto flex flex-col">
+        className="bg-surface w-full lg:rounded-2xl lg:max-w-[700px] lg:shadow-pop h-full lg:h-auto lg:my-auto flex flex-col">
 
         {/* Header */}
         <div className="px-6 pt-5 pb-4 border-b border-line/60 flex items-start justify-between">
@@ -376,7 +405,7 @@ function UserModal({ editUser, onClose, onSaved }) {
               </Field>
               <Field label="Email *">
                 <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
-                  className="field-input" placeholder="prenom@gestcopta.sn" />
+                  className="field-input" placeholder="prenom@salihholding.sn" />
               </Field>
               <Field label={isEdit ? 'Nouveau mot de passe (laisser vide = inchangé)' : 'Mot de passe temporaire *'}>
                 <input type="password" value={pwd} onChange={e => setPwd(e.target.value)}
@@ -412,6 +441,51 @@ function UserModal({ editUser, onClose, onSaved }) {
                   ))}
                 </div>
               </Field>
+            </div>
+
+            {/* Accès boutiques */}
+            <div className="border border-line/70 rounded-xl p-4 space-y-3">
+              <div className="text-[10px] uppercase tracking-wider text-muted font-medium">Accès boutiques</div>
+              <div className="flex gap-2">
+                {[
+                  { val: 'all',    label: 'Toutes les boutiques' },
+                  { val: 'select', label: 'Boutiques spécifiques' },
+                ].map(opt => (
+                  <button key={opt.val} type="button" onClick={() => setShopAccess(opt.val)}
+                    className={`flex-1 py-2 text-sm rounded-lg border transition-colors ${
+                      shopAccess === opt.val
+                        ? 'bg-brick-500 text-white border-brick-500'
+                        : 'border-line/70 text-muted hover:border-brick-300'
+                    }`}>
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {shopAccess === 'select' && (
+                <div>
+                  {allShops.length === 0 ? (
+                    <div className="text-sm text-muted text-center py-3">Aucune boutique créée.</div>
+                  ) : (
+                    <div className="grid grid-cols-2 gap-2">
+                      {allShops.map(sh => (
+                        <button key={sh.id} type="button" onClick={() => toggleShop(sh.id)}
+                          className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border text-sm text-left transition-colors ${
+                            selectedShops.includes(sh.id)
+                              ? 'border-brick-400 bg-brick-50 text-brick-700'
+                              : 'border-line/70 text-muted hover:border-brick-200'
+                          }`}>
+                          <span className="w-3 h-3 rounded-full shrink-0" style={{ background: sh.color }}/>
+                          <span className="truncate">{sh.name}</span>
+                          {selectedShops.includes(sh.id) && <Check size={13} className="ml-auto shrink-0 text-brick-500"/>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {shopAccess === 'select' && selectedShops.length === 0 && (
+                    <div className="text-xs text-amber-600 mt-2">⚠ Aucune boutique sélectionnée — l'utilisateur ne verra aucune donnée.</div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Permissions */}

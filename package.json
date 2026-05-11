@@ -1,28 +1,37 @@
 {
-  "name": "gestcopta",
+  "name": "salih-holding",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.2.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "server": "node server/index.js",
+    "dev": "concurrently --kill-others \"npm:vite\" \"npm:server\"",
+    "vite": "vite",
+    "server": "node --env-file=.env server/index.js",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.105.3",
     "bcryptjs": "^3.0.3",
     "better-sqlite3": "^12.9.0",
     "connect-sqlite3": "^0.9.16",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
+    "html2canvas": "^1.4.1",
+    "jsonwebtoken": "^9.0.3",
+    "jspdf": "^4.2.1",
     "lucide-react": "^0.456.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "serverless-http": "^4.0.0"
   },
   "devDependencies": {
+    "@netlify/functions": "^5.2.0",
     "@vitejs/plugin-react": "^4.3.3",
     "autoprefixer": "^10.4.20",
+    "concurrently": "^9.2.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.15",
     "vite": "^5.4.11"

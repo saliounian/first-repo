@@ -8,11 +8,11 @@ export const currentUser = {
 };
 
 export const shops = [
-  { id: 'plateau',  name: 'Plateau',  color: '#C0392B' },
-  { id: 'almadies', name: 'Almadies', color: '#D86B57' },
-  { id: 'yoff',     name: 'Yoff',     color: '#E89484' },
-  { id: 'liberte6', name: 'Liberté 6',color: '#A82E22' },
-  { id: 'autre',    name: 'Autre',    color: '#6B6B6B' }
+  { id: 'plateau',  name: 'Plateau',  color: '#0D5C2E' },
+  { id: 'almadies', name: 'Almadies', color: '#3D8253' },
+  { id: 'yoff',     name: 'Yoff',     color: '#6FA681' },
+  { id: 'liberte6', name: 'Liberté 6',color: '#1E7A3E' },
+  { id: 'autre',    name: 'Autre',    color: '#9CA8A0' }
 ];
 
 export const products = [
@@ -221,3 +221,79 @@ export const invoiceKPIs = {
   pending: 265_000,
   overdue: 53_800
 };
+
+// ─── Stock points per shop ────────────────────────────────────────────────────
+export const stockPoints = [
+  {
+    id: 'sp1', shopId: 'plateau', name: 'Dépôt principal', surface: '80 m²',
+    stockInitial: 520, stockVendu: 63, stockActuel: 457,
+    responsable: { nom: 'Oumar Sy Diallo', adresse: 'Cité Keur Gorgui, Dakar', fonction: 'Magasinier chef' }
+  },
+  {
+    id: 'sp2', shopId: 'plateau', name: 'Réserve arrière', surface: '30 m²',
+    stockInitial: 180, stockVendu: 22, stockActuel: 158,
+    responsable: { nom: 'Mariama Bâ Ndiaye', adresse: 'Sacré-Cœur 3, Dakar', fonction: 'Aide-magasinière' }
+  },
+  {
+    id: 'sp3', shopId: 'almadies', name: 'Entrepôt central', surface: '120 m²',
+    stockInitial: 640, stockVendu: 118, stockActuel: 522,
+    responsable: { nom: 'Ibou Diagne Fall', adresse: 'Almadies, Route du King Fahd', fonction: 'Responsable logistique' }
+  },
+  {
+    id: 'sp4', shopId: 'almadies', name: 'Zone froide', surface: '20 m²',
+    stockInitial: 90, stockVendu: 24, stockActuel: 66,
+    responsable: { nom: 'Ibou Diagne Fall', adresse: 'Almadies, Route du King Fahd', fonction: 'Responsable logistique' }
+  },
+  {
+    id: 'sp5', shopId: 'yoff', name: 'Dépôt principal', surface: '60 m²',
+    stockInitial: 310, stockVendu: 55, stockActuel: 255,
+    responsable: { nom: 'Astou Gaye Seck', adresse: 'Village de Yoff, Dakar', fonction: 'Magasinière' }
+  },
+  {
+    id: 'sp6', shopId: 'liberte6', name: 'Dépôt principal', surface: '70 m²',
+    stockInitial: 380, stockVendu: 72, stockActuel: 308,
+    responsable: { nom: 'Pape Ngor Mbaye', adresse: 'Liberté 6 Extension, Dakar', fonction: 'Responsable dépôt' }
+  },
+  {
+    id: 'sp7', shopId: 'liberte6', name: 'Vitrine', surface: '15 m²',
+    stockInitial: 80, stockVendu: 31, stockActuel: 49,
+    responsable: { nom: 'Pape Ngor Mbaye', adresse: 'Liberté 6 Extension, Dakar', fonction: 'Responsable dépôt' }
+  },
+  {
+    id: 'sp8', shopId: 'autre', name: 'Dépôt externe', surface: '40 m²',
+    stockInitial: 250, stockVendu: 3, stockActuel: 247,
+    responsable: { nom: '—', adresse: '—', fonction: '—' }
+  },
+];
+
+// Stock by stock point per product (qty units)
+export const stockByPoint = {
+  p1:  { sp1: 45, sp2: 12, sp3: 18, sp4: 0,  sp5: 18, sp6: 28, sp7: 10, sp8: 0  },
+  p2:  { sp1: 10, sp2: 8,  sp3: 3,  sp4: 1,  sp5: 28, sp6: 4,  sp7: 2,  sp8: 31 },
+  p3:  { sp1: 22, sp2: 14, sp3: 18, sp4: 12, sp5: 24, sp6: 20, sp7: 8,  sp8: 17 },
+  p4:  { sp1: 30, sp2: 24, sp3: 28, sp4: 21, sp5: 28, sp6: 25, sp7: 16, sp8: 60 },
+  p5:  { sp1: 7,  sp2: 5,  sp3: 4,  sp4: 2,  sp5: 4,  sp6: 10, sp7: 5,  sp8: 7  },
+  p6:  { sp1: 50, sp2: 38, sp3: 42, sp4: 30, sp5: 65, sp6: 48, sp7: 32, sp8: 91 },
+  p7:  { sp1: 18, sp2: 14, sp3: 15, sp4: 10, sp5: 19, sp6: 8,  sp7: 6,  sp8: 24 },
+  p8:  { sp1: 24, sp2: 17, sp3: 14, sp4: 8,  sp5: 30, sp6: 22, sp7: 14, sp8: 17 },
+  p9:  { sp1: 38, sp2: 26, sp3: 35, sp4: 23, sp5: 42, sp6: 30, sp7: 20, sp8: 38 },
+  p10: { sp1: 0,  sp2: 0,  sp3: 6,  sp4: 2,  sp5: 5,  sp6: 0,  sp7: 0,  sp8: 12 },
+};
+
+// Shop details for boutiques module
+export const shopDetails = {
+  plateau:  { manager: 'Ousmane Ndiaye', phone: '+221 77 123 45 67', address: 'Av. Peytavin, Plateau',     opened: '2019-03-15', status: 'actif', caMonth: 947_000 },
+  almadies: { manager: 'Aïssatou Fall',  phone: '+221 76 234 56 78', address: 'Route des Almadies, Dakar', opened: '2020-07-01', status: 'actif', caMonth: 805_000 },
+  yoff:     { manager: 'Moussa Diallo',  phone: '+221 78 345 67 89', address: 'Village de Yoff, Dakar',    opened: '2021-01-20', status: 'actif', caMonth: 666_000 },
+  liberte6: { manager: 'Ndèye Sarr',    phone: '+221 77 456 78 90', address: 'Liberté 6, Dakar',          opened: '2021-09-10', status: 'actif', caMonth: 391_000 },
+  autre:    { manager: '—',              phone: '—',                 address: 'Divers / Externe',          opened: '2022-01-01', status: 'actif', caMonth: 110_000 },
+};
+
+// Transfer history (inter-shop / inter-point)
+export const transferHistory = [
+  { id: 'tr1', date: '28 AVR 2026 · 14:31', from: 'Plateau / Dépôt principal',   to: 'Liberté 6 / Dépôt principal',  product: 'Riz parfumé 25kg',  qty: 10, validateur: 'Aissa Diop',  status: 'validé' },
+  { id: 'tr2', date: '27 AVR 2026 · 11:15', from: 'Almadies / Entrepôt central', to: 'Yoff / Dépôt principal',       product: 'Huile soja 5L',     qty: 15, validateur: 'Aissa Diop',  status: 'validé' },
+  { id: 'tr3', date: '26 AVR 2026 · 09:40', from: 'Plateau / Réserve arrière',   to: 'Plateau / Dépôt principal',    product: 'Sucre poudre 1kg',  qty: 30, validateur: 'Oumar Sy',    status: 'validé' },
+  { id: 'tr4', date: '25 AVR 2026 · 16:22', from: 'Almadies / Zone froide',      to: 'Almadies / Entrepôt central',  product: 'Lait poudre 900g',  qty: 8,  validateur: 'Ibou Diagne', status: 'validé' },
+  { id: 'tr5', date: '25 AVR 2026 · 08:55', from: 'Yoff / Dépôt principal',      to: 'Liberté 6 / Vitrine',          product: 'Café arabica 200g', qty: 20, validateur: 'Astou Gaye', status: 'en attente' },
+];

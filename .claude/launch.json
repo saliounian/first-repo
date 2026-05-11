@@ -17,7 +17,8 @@
       "name": "api-server",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "server"],
-      "port": 3001
+      "port": 3001,
+      "autoPort": true
     }
   ]
 }

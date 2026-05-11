@@ -1,163 +1,134 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import db from '../db.js';
-import { requireAuth, requireAdmin, logActivity, getUserPermissions } from '../middleware/auth.js';
+import supabase from '../db.js';
+import { requireAuth, requireAdmin, logActivity, getUserShops, setUserShops } from '../middleware/auth.js';
 
 const router = Router();
 router.use(requireAuth, requireAdmin);
 
 // ─── GET /api/users ───────────────────────────────────────────────────────────
-router.get('/', (req, res) => {
-  const users = db.prepare(`
-    SELECT u.id, u.nom, u.email, u.statut, u.must_change_password,
-           u.derniere_connexion, u.session_timeout, u.created_at,
-           r.nom as role_nom, r.id as role_id
-    FROM users u
-    LEFT JOIN roles r ON r.id = u.role_id
-    ORDER BY u.created_at DESC
-  `).all();
-
-  res.json(users);
+router.get('/', async (_req, res) => {
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, nom, email, statut, must_change_password, derniere_connexion, session_timeout, created_at, roles(id, nom)')
+    .order('created_at', { ascending: false });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(data.map(u => ({ ...u, role_nom: u.roles?.nom, role_id: u.roles?.id })));
 });
 
 // ─── GET /api/users/:id ───────────────────────────────────────────────────────
-router.get('/:id', (req, res) => {
-  const user = db.prepare(`
-    SELECT u.id, u.nom, u.email, u.statut, u.must_change_password,
-           u.derniere_connexion, u.session_timeout, u.created_at,
-           r.nom as role_nom, r.id as role_id
-    FROM users u
-    LEFT JOIN roles r ON r.id = u.role_id
-    WHERE u.id = ?
-  `).get(req.params.id);
+router.get('/:id', async (req, res) => {
+  const { data: users, error } = await supabase
+    .from('users')
+    .select('id, nom, email, statut, must_change_password, derniere_connexion, session_timeout, created_at, roles(id, nom)')
+    .eq('id', req.params.id)
+    .limit(1);
 
-  if (!user) return res.status(404).json({ error: 'Utilisateur introuvable.' });
+  if (error || !users?.length) return res.status(404).json({ error: 'Utilisateur introuvable.' });
+  const user = { ...users[0], role_nom: users[0].roles?.nom, role_id: users[0].roles?.id };
 
-  // Get custom permissions for this user
-  const customPerms = db.prepare(`
-    SELECT p.id, p.module, p.action, p.description, up.granted
-    FROM user_permissions up
-    JOIN permissions p ON p.id = up.permission_id
-    WHERE up.user_id = ?
-  `).all(req.params.id);
+  const [customPermsRaw, allowedShops] = await Promise.all([
+    supabase.from('user_permissions').select('granted, permissions(id, module, action, description)').eq('user_id', req.params.id),
+    getUserShops(parseInt(req.params.id)),
+  ]);
 
-  res.json({ ...user, customPerms });
+  res.json({
+    ...user,
+    allowedShops,
+    customPerms: (customPermsRaw.data || []).map(cp => ({ ...cp.permissions, granted: cp.granted }))
+  });
 });
 
 // ─── POST /api/users ──────────────────────────────────────────────────────────
 router.post('/', async (req, res) => {
-  const { nom, email, password, roleId, statut = 'actif',
-          sessionTimeout = 30, customPerms = [] } = req.body;
+  const { nom, email, password, roleId, statut = 'actif', sessionTimeout = 30, customPerms = [], allowedShops = [] } = req.body;
+  if (!nom || !email || !password || !roleId)
+    return res.status(400).json({ error: 'Nom, email, mot de passe et rôle requis.' });
+  if (password.length < 8)
+    return res.status(400).json({ error: 'Mot de passe minimum 8 caractères.' });
 
-  if (!nom || !email || !password || !roleId) {
-    return res.status(400).json({ error: 'Nom, email, mot de passe et rôle sont requis.' });
-  }
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'Le mot de passe doit faire au moins 8 caractères.' });
-  }
-
-  const existing = db.prepare('SELECT id FROM users WHERE email = ?').get(email.toLowerCase().trim());
-  if (existing) {
-    return res.status(409).json({ error: 'Cet email est déjà utilisé.' });
-  }
+  const { data: existing } = await supabase.from('users').select('id').eq('email', email.toLowerCase().trim()).limit(1);
+  if (existing?.length) return res.status(409).json({ error: 'Email déjà utilisé.' });
 
   const hash = await bcrypt.hash(password, 12);
-  const result = db.prepare(`
-    INSERT INTO users (nom, email, password_hash, role_id, statut, session_timeout, must_change_password)
-    VALUES (?, ?, ?, ?, ?, ?, 1)
-  `).run(nom.trim(), email.toLowerCase().trim(), hash, roleId, statut, sessionTimeout);
+  const { data: newUser, error } = await supabase.from('users').insert({
+    nom: nom.trim(), email: email.toLowerCase().trim(),
+    password_hash: hash, role_id: roleId, statut,
+    session_timeout: sessionTimeout, must_change_password: true
+  }).select('id').single();
 
-  const newUserId = result.lastInsertRowid;
+  if (error) return res.status(500).json({ error: error.message });
 
-  // Apply custom permissions
   if (customPerms.length > 0) {
-    const insertPerm = db.prepare(`
-      INSERT INTO user_permissions (user_id, permission_id, granted)
-      VALUES (?, ?, ?)
-      ON CONFLICT(user_id, permission_id) DO UPDATE SET granted = excluded.granted
-    `);
-    for (const cp of customPerms) {
-      insertPerm.run(newUserId, cp.permissionId, cp.granted ? 1 : 0);
-    }
+    await supabase.from('user_permissions').upsert(
+      customPerms.map(cp => ({ user_id: newUser.id, permission_id: cp.permissionId, granted: !!cp.granted }))
+    );
   }
 
-  logActivity({
+  // Shop assignments ([] = toutes boutiques, sinon liste IDs)
+  await setUserShops(newUser.id, Array.isArray(allowedShops) ? allowedShops : []);
+
+  await logActivity({
     userId: req.user.id, userNom: req.user.nom, userEmail: req.user.email,
-    action: `Création de l'utilisateur "${nom}" (${email})`,
-    module: 'admin',
-    nouvelleValeur: JSON.stringify({ nom, email, role: roleId, statut }),
-    resultat: 'succes'
+    action: `Création utilisateur "${nom}" (${email})`, module: 'admin',
+    nouvelleValeur: JSON.stringify({ nom, email, statut }), resultat: 'succes'
   });
 
-  res.status(201).json({ id: newUserId, nom, email, statut });
+  res.status(201).json({ id: newUser.id, nom, email, statut });
 });
 
 // ─── PUT /api/users/:id ───────────────────────────────────────────────────────
 router.put('/:id', async (req, res) => {
-  const { nom, email, roleId, statut, sessionTimeout, customPerms, newPassword } = req.body;
+  const { nom, email, roleId, statut, sessionTimeout, customPerms, newPassword, allowedShops } = req.body;
   const userId = parseInt(req.params.id);
 
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  const { data: users } = await supabase.from('users').select('*').eq('id', userId).limit(1);
+  const user = users?.[0];
   if (!user) return res.status(404).json({ error: 'Utilisateur introuvable.' });
 
-  const updates = [];
-  const values = [];
+  const updates = {};
   const changes = [];
 
-  if (nom && nom !== user.nom) {
-    updates.push('nom = ?'); values.push(nom);
-    changes.push(`nom: "${user.nom}" → "${nom}"`);
-  }
+  if (nom && nom !== user.nom)             { updates.nom = nom; changes.push(`nom → "${nom}"`); }
   if (email && email.toLowerCase() !== user.email) {
-    const exists = db.prepare('SELECT id FROM users WHERE email = ? AND id != ?').get(email.toLowerCase(), userId);
-    if (exists) return res.status(409).json({ error: 'Email déjà utilisé.' });
-    updates.push('email = ?'); values.push(email.toLowerCase());
-    changes.push(`email: "${user.email}" → "${email.toLowerCase()}"`);
+    const { data: ex } = await supabase.from('users').select('id').eq('email', email.toLowerCase()).neq('id', userId).limit(1);
+    if (ex?.length) return res.status(409).json({ error: 'Email déjà utilisé.' });
+    updates.email = email.toLowerCase();
+    changes.push(`email → "${email.toLowerCase()}"`);
   }
-  if (roleId && roleId !== user.role_id) {
-    const oldRole = db.prepare('SELECT nom FROM roles WHERE id = ?').get(user.role_id);
-    const newRole = db.prepare('SELECT nom FROM roles WHERE id = ?').get(roleId);
-    updates.push('role_id = ?'); values.push(roleId);
-    changes.push(`rôle: "${oldRole?.nom}" → "${newRole?.nom}"`);
-  }
-  if (statut && statut !== user.statut) {
-    updates.push('statut = ?'); values.push(statut);
-    changes.push(`statut: "${user.statut}" → "${statut}"`);
-  }
-  if (sessionTimeout && sessionTimeout !== user.session_timeout) {
-    updates.push('session_timeout = ?'); values.push(sessionTimeout);
-  }
+  if (roleId && roleId !== user.role_id)   { updates.role_id = roleId; changes.push(`rôle modifié`); }
+  if (statut && statut !== user.statut)    { updates.statut = statut; changes.push(`statut → "${statut}"`); }
+  if (sessionTimeout)                      { updates.session_timeout = sessionTimeout; }
   if (newPassword) {
     if (newPassword.length < 8) return res.status(400).json({ error: 'Mot de passe trop court.' });
-    const hash = await bcrypt.hash(newPassword, 12);
-    updates.push('password_hash = ?'); values.push(hash);
-    updates.push('must_change_password = ?'); values.push(1);
+    updates.password_hash = await bcrypt.hash(newPassword, 12);
+    updates.must_change_password = true;
     changes.push('mot de passe réinitialisé');
   }
 
-  if (updates.length > 0) {
-    db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...values, userId);
+  if (Object.keys(updates).length > 0) {
+    await supabase.from('users').update(updates).eq('id', userId);
   }
 
-  // Sync custom permissions
   if (Array.isArray(customPerms)) {
-    db.prepare('DELETE FROM user_permissions WHERE user_id = ?').run(userId);
-    const insertPerm = db.prepare(`
-      INSERT INTO user_permissions (user_id, permission_id, granted) VALUES (?, ?, ?)
-    `);
-    for (const cp of customPerms) {
-      insertPerm.run(userId, cp.permissionId, cp.granted ? 1 : 0);
+    await supabase.from('user_permissions').delete().eq('user_id', userId);
+    if (customPerms.length > 0) {
+      await supabase.from('user_permissions').insert(
+        customPerms.map(cp => ({ user_id: userId, permission_id: cp.permissionId, granted: !!cp.granted }))
+      );
     }
   }
 
+  // Shop assignments (toujours sync si envoyé)
+  if (Array.isArray(allowedShops)) {
+    await setUserShops(userId, allowedShops);
+  }
+
   if (changes.length > 0) {
-    logActivity({
+    await logActivity({
       userId: req.user.id, userNom: req.user.nom, userEmail: req.user.email,
-      action: `Modification de l'utilisateur "${user.nom}"`,
-      module: 'admin',
-      ancienneValeur: changes.map(c => c.split(' → ')[0].split(': ')[1]).join(', '),
-      nouvelleValeur: changes.join(', '),
-      resultat: 'succes'
+      action: `Modification utilisateur "${user.nom}"`, module: 'admin',
+      nouvelleValeur: changes.join(', '), resultat: 'succes'
     });
   }
 
@@ -165,25 +136,19 @@ router.put('/:id', async (req, res) => {
 });
 
 // ─── PATCH /api/users/:id/toggle ─────────────────────────────────────────────
-router.patch('/:id/toggle', (req, res) => {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
+router.patch('/:id/toggle', async (req, res) => {
+  const { data: users } = await supabase.from('users').select('*').eq('id', req.params.id).limit(1);
+  const user = users?.[0];
   if (!user) return res.status(404).json({ error: 'Utilisateur introuvable.' });
-
-  // Prevent deactivating yourself
-  if (user.id === req.user.id) {
-    return res.status(400).json({ error: 'Vous ne pouvez pas désactiver votre propre compte.' });
-  }
+  if (user.id === req.user.id) return res.status(400).json({ error: 'Impossible de désactiver votre propre compte.' });
 
   const newStatut = user.statut === 'actif' ? 'inactif' : 'actif';
-  db.prepare('UPDATE users SET statut = ? WHERE id = ?').run(newStatut, user.id);
+  await supabase.from('users').update({ statut: newStatut }).eq('id', user.id);
 
-  logActivity({
+  await logActivity({
     userId: req.user.id, userNom: req.user.nom, userEmail: req.user.email,
-    action: `${newStatut === 'inactif' ? 'Désactivation' : 'Activation'} du compte "${user.nom}"`,
-    module: 'admin',
-    ancienneValeur: user.statut,
-    nouvelleValeur: newStatut,
-    resultat: 'succes'
+    action: `${newStatut === 'inactif' ? 'Désactivation' : 'Activation'} compte "${user.nom}"`,
+    module: 'admin', ancienneValeur: user.statut, nouvelleValeur: newStatut, resultat: 'succes'
   });
 
   res.json({ ok: true, statut: newStatut });
