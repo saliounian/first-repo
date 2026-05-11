@@ -323,10 +323,21 @@ export default function ProduitsStock() {
       row[f.toPoint]   = (row[f.toPoint] || 0) + f.qty;
       return { ...prev, [f.product]: row };
     });
-    const prod  = products.find(p => p.id === f.product);
-    const from  = `${shops.find(s => s.id === f.fromShop)?.name} / ${stockPoints.find(sp => sp.id === f.fromPoint)?.name}`;
-    const to    = `${shops.find(s => s.id === f.toShop)?.name} / ${stockPoints.find(sp => sp.id === f.toPoint)?.name}`;
-    setTransfers(prev => [{ id: uid(), product: prod?.name, from, to, qty: f.qty, date: new Date().toLocaleDateString('fr-FR') }, ...prev]);
+    const prod     = products.find(p => p.id === f.product);
+    const fromShop = `${shops.find(s => s.id === f.fromShop)?.name} / ${stockPoints.find(sp => sp.id === f.fromPoint)?.name}`;
+    const toShop   = `${shops.find(s => s.id === f.toShop)?.name} / ${stockPoints.find(sp => sp.id === f.toPoint)?.name}`;
+    setTransfers(prev => [{
+      id: uid(),
+      product:     prod?.name,
+      fromShop,                      // → from_shop  (display)
+      toShop,                        // → to_shop    (display)
+      fromShopId:  f.fromShop,       // → from_shop_id
+      toShopId:    f.toShop,         // → to_shop_id
+      fromPointId: f.fromPoint,      // → from_point_id (new column)
+      toPointId:   f.toPoint,        // → to_point_id   (new column)
+      qty:  f.qty,
+      date: new Date().toLocaleDateString('fr-FR'),
+    }, ...prev]);
   }
 
   function totalStock(pid) {
@@ -541,8 +552,8 @@ export default function ProduitsStock() {
                     {transfers.map(tr => (
                       <tr key={tr.id} className="border-b border-line/40 last:border-0 hover:bg-bone/50">
                         <td className="py-3 px-5 font-medium text-ink">{tr.product}</td>
-                        <td className="px-3 text-xs text-muted hidden lg:table-cell">{tr.from}</td>
-                        <td className="px-3 text-xs text-muted hidden lg:table-cell">{tr.to}</td>
+                        <td className="px-3 text-xs text-muted hidden lg:table-cell">{tr.fromShop}</td>
+                        <td className="px-3 text-xs text-muted hidden lg:table-cell">{tr.toShop}</td>
                         <td className="px-3 text-right tabular-nums font-semibold">{tr.qty}</td>
                         <td className="px-5 text-xs text-muted">{tr.date}</td>
                       </tr>

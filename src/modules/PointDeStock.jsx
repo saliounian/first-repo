@@ -6,7 +6,7 @@ import { Card } from '../components/ui.jsx';
 import { useStore } from '../context/StoreContext.jsx';
 import { uid } from '../data/store.js';
 
-const EMPTY = { name: '', shopId: '', stockInitial: 0, stockVendu: 0, respNom: '', respAdresse: '', respFonction: '' };
+const EMPTY = { name: '', shopId: '', stockInitial: 0, respNom: '', respAdresse: '', respFonction: '' };
 
 function EmptyState({ onAdd }) {
   return (
@@ -27,7 +27,7 @@ function Modal({ point, shops, onClose, onSave }) {
   const isEdit = !!point;
   const [f, setF] = useState(isEdit ? {
     name: point.name, shopId: point.shopId,
-    stockInitial: point.stockInitial, stockVendu: point.stockVendu,
+    stockInitial: point.stockInitial,
     respNom: point.responsable?.nom || '', respAdresse: point.responsable?.adresse || '', respFonction: point.responsable?.fonction || '',
   } : { ...EMPTY });
   const [done, setDone] = useState(false);
@@ -62,13 +62,10 @@ function Modal({ point, shops, onClose, onSave }) {
                 {shops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
-            <div>
-              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Stock initial</label>
+            <div className="col-span-2">
+              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Stock initial (stock de départ)</label>
               <input type="number" min="0" value={f.stockInitial} onChange={e => set('stockInitial', +e.target.value)} className="field-input" />
-            </div>
-            <div>
-              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Articles vendus</label>
-              <input type="number" min="0" value={f.stockVendu} onChange={e => set('stockVendu', +e.target.value)} className="field-input" />
+              <p className="text-[10px] text-muted mt-1">Les valeurs Vendus et Actuels sont calculées automatiquement depuis les commandes et transferts.</p>
             </div>
           </div>
           <div className="border-t border-line/50 pt-3 space-y-3">
@@ -92,8 +89,7 @@ function Modal({ point, shops, onClose, onSave }) {
           <button disabled={!f.name.trim()} onClick={() => {
             onSave({
               id: point?.id || uid(), shopId: f.shopId, name: f.name.trim(),
-              stockInitial: f.stockInitial, stockVendu: f.stockVendu,
-              stockActuel: f.stockInitial - f.stockVendu,
+              stockInitial: f.stockInitial,
               responsable: { nom: f.respNom, adresse: f.respAdresse, fonction: f.respFonction },
             });
             setDone(true); setTimeout(() => { setDone(false); onClose(); }, 900);
@@ -107,7 +103,7 @@ function Modal({ point, shops, onClose, onSave }) {
 }
 
 export default function PointDeStock() {
-  const { stockPoints: points, setStockPoints: setPoints, shops } = useStore();
+  const { stockPoints: points, setStockPoints: setPoints, shops, computeStockPointStats } = useStore();
   const [modal, setModal]       = useState(null);
   const [toDelete, setToDelete] = useState(null);
   const [filterShop, setFilter] = useState('');
@@ -185,6 +181,7 @@ export default function PointDeStock() {
                 <tbody>
                   {filtered.map(pt => {
                     const shop = shops.find(s => s.id === pt.shopId);
+                    const stats = computeStockPointStats(pt.id);
                     return (
                       <tr key={pt.id} className="border-b border-line/40 last:border-0 hover:bg-bone/60 group">
                         <td className="py-3 px-5">
@@ -195,9 +192,9 @@ export default function PointDeStock() {
                             <span className="w-2 h-2 rounded-full" style={{ background: shop.color }} />{shop.name}
                           </span>}
                         </td>
-                        <td className="text-right tabular-nums px-3">{pt.stockInitial}</td>
-                        <td className="text-right tabular-nums px-3 text-brick-600 font-medium">{pt.stockVendu}</td>
-                        <td className="text-right tabular-nums px-3 font-semibold">{pt.stockActuel}</td>
+                        <td className="text-right tabular-nums px-3">{stats.initial}</td>
+                        <td className="text-right tabular-nums px-3 text-brick-600 font-medium">{stats.vendu}</td>
+                        <td className="text-right tabular-nums px-3 font-semibold">{stats.actuel}</td>
                         <td className="px-3 text-ink">{pt.responsable?.nom}</td>
                         <td className="px-3 text-muted text-xs">{pt.responsable?.adresse}</td>
                         <td className="px-3 text-muted text-xs">{pt.responsable?.fonction}</td>
@@ -218,6 +215,7 @@ export default function PointDeStock() {
             <div className="lg:hidden space-y-3">
               {filtered.map(pt => {
                 const shop = shops.find(s => s.id === pt.shopId);
+                const stats = computeStockPointStats(pt.id);
                 return (
                   <Card key={pt.id} className="px-4 py-3">
                     <div className="flex items-start justify-between gap-2">
@@ -234,7 +232,7 @@ export default function PointDeStock() {
                       </div>
                     </div>
                     <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                      {[['Initial', pt.stockInitial, ''], ['Vendus', pt.stockVendu, 'text-brick-600'], ['Actuels', pt.stockActuel, 'font-semibold']].map(([l, v, cls]) => (
+                      {[['Initial', stats.initial, ''], ['Vendus', stats.vendu, 'text-brick-600'], ['Actuels', stats.actuel, 'font-semibold']].map(([l, v, cls]) => (
                         <div key={l} className="bg-bone rounded-lg py-2">
                           <div className={`text-sm tabular-nums text-ink ${cls}`}>{v}</div>
                           <div className="text-[10px] text-muted mt-0.5">{l}</div>

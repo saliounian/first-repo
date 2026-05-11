@@ -63,6 +63,7 @@ function OrderModal({ order, clients, shops, products, stockPoints, stockByPoint
     fraisService:     order?.fraisService     || { ...blank },
   });
   const [newProd, setNewProd] = useState({ productId: '', qty: 1 });
+  const [stockError, setStockError] = useState('');
   const [done, setDone] = useState(false);
   const set = (k, v) => setF(p => ({ ...p, [k]: v }));
   const setFrais = (key, field, val) => setF(p => ({ ...p, [key]: { ...p[key], [field]: val } }));
@@ -138,7 +139,7 @@ function OrderModal({ order, clients, shops, products, stockPoints, stockByPoint
                 : [];
               return (
                 <div className="space-y-2 mb-2">
-                  <select value={newProd.productId} onChange={e => setNewProd(p => ({ ...p, productId: e.target.value, pointId: '' }))}
+                  <select value={newProd.productId} onChange={e => { setNewProd(p => ({ ...p, productId: e.target.value, pointId: '' })); setStockError(''); }}
                     className="field-input py-2 text-sm">
                     <option value="">Choisir un produit…</option>
                     {(f.shopId
@@ -149,7 +150,7 @@ function OrderModal({ order, clients, shops, products, stockPoints, stockByPoint
                     ))}
                   </select>
                   <div className="flex gap-2">
-                    <select value={newProd.pointId || ''} onChange={e => setNewProd(p => ({ ...p, pointId: e.target.value }))}
+                    <select value={newProd.pointId || ''} onChange={e => { setNewProd(p => ({ ...p, pointId: e.target.value })); setStockError(''); }}
                       disabled={!newProd.productId}
                       className="field-input flex-1 py-2 text-sm disabled:opacity-50">
                       <option value="">Point de stock…</option>
@@ -159,7 +160,7 @@ function OrderModal({ order, clients, shops, products, stockPoints, stockByPoint
                       })}
                     </select>
                     <input type="number" min="1" value={newProd.qty}
-                      onChange={e => setNewProd(p => ({ ...p, qty: +e.target.value }))}
+                      onChange={e => { setNewProd(p => ({ ...p, qty: +e.target.value })); setStockError(''); }}
                       className="field-input w-16 py-2 text-sm text-center" placeholder="Qté"/>
                     <button type="button" disabled={!newProd.productId || !newProd.pointId}
                       onClick={() => {
@@ -167,11 +168,18 @@ function OrderModal({ order, clients, shops, products, stockPoints, stockByPoint
                         const point = stockPoints.find(sp => sp.id === newProd.pointId);
                         if (!prod || !point) return;
                         const avail = (stockByPoint[prod.id] || {})[point.id] || 0;
-                        const qty   = Math.min(newProd.qty || 1, avail);
-                        if (qty <= 0) return;
+                        const qty   = newProd.qty || 1;
+                        if (avail <= 0) {
+                          setStockError(`Stock épuisé pour "${point.name}". Aucune unité disponible.`);
+                          return;
+                        }
+                        if (qty > avail) {
+                          setStockError(`Stock insuffisant : ${qty} demandé(s) mais seulement ${avail} disponible(s) à "${point.name}".`);
+                          return;
+                        }
+                        setStockError('');
                         const item = { productId: prod.id, name: prod.name, qty, unitPrice: prod.price || 0,
                                        pointId: point.id, pointName: point.name };
-                        // Identifier l'item par productId+pointId (pour permettre même produit sur plusieurs points)
                         const idx = f.lineItems.findIndex(l => l.productId === prod.id && l.pointId === point.id);
                         const updated = idx >= 0
                           ? f.lineItems.map((l, i) => i === idx ? { ...l, qty: Math.min(l.qty + qty, avail) } : l)
@@ -184,6 +192,12 @@ function OrderModal({ order, clients, shops, products, stockPoints, stockByPoint
                       +
                     </button>
                   </div>
+                  {stockError && (
+                    <div className="flex items-start gap-2 px-3 py-2 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">
+                      <span className="shrink-0 mt-0.5">⚠</span>
+                      <span>{stockError}</span>
+                    </div>
+                  )}
                 </div>
               );
             })()}

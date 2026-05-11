@@ -166,6 +166,38 @@ export function StoreProvider({ children }) {
     return pts.reduce((s, spId) => s + (row[spId] || 0), 0);
   }
 
+  // Dynamic stock stats for a stock point — reads only stockInitial + real orders + real transfers.
+  // Never reads stale stored stockVendu / stockActuel.
+  //
+  // initial = stockInitial (user-set opening balance)
+  //         + Σ transfers arriving at this point (toPointId = spId)
+  //         - Σ transfers leaving this point    (fromPointId = spId)
+  // vendu   = Σ qty from delivered/prepared orders whose lineItem.pointId = spId
+  // actuel  = initial - vendu
+  function computeStockPointStats(spId) {
+    const sp = stockPoints.find(p => p.id === spId);
+    const base = sp?.stockInitial || 0;
+
+    // Transfer effects — only counted when point-level IDs are present
+    const transfersIn  = transfers
+      .filter(t => t.toPointId === spId)
+      .reduce((s, t) => s + (t.qty || 0), 0);
+    const transfersOut = transfers
+      .filter(t => t.fromPointId === spId)
+      .reduce((s, t) => s + (t.qty || 0), 0);
+
+    const initial = base + transfersIn - transfersOut;
+
+    const vendu = orders.reduce((sum, o) => {
+      if (o.status !== 'livrée' && o.status !== 'préparée') return sum;
+      return sum + (o.lineItems || [])
+        .filter(item => item.pointId === spId)
+        .reduce((s, item) => s + (item.qty || 0), 0);
+    }, 0);
+
+    return { initial, vendu, actuel: initial - vendu };
+  }
+
   // ─── Stock consume / restore (livraison de commande) ─────────────────────
   function consumeStockForOrder(lineItems, shopId) {
     const breakdown = {};
@@ -242,6 +274,7 @@ export function StoreProvider({ children }) {
       totalStockForShop,
       stockForPoint,
       stockForProductByShop,
+      computeStockPointStats,
       consumeStockForOrder,
       restoreStockFromBreakdown,
       // state
