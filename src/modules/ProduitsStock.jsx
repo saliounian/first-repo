@@ -329,12 +329,12 @@ export default function ProduitsStock() {
     setTransfers(prev => [{
       id: uid(),
       product:     prod?.name,
-      fromShop,                      // → from_shop  (display)
-      toShop,                        // → to_shop    (display)
-      fromShopId:  f.fromShop,       // → from_shop_id
-      toShopId:    f.toShop,         // → to_shop_id
-      fromPointId: f.fromPoint,      // → from_point_id (new column)
-      toPointId:   f.toPoint,        // → to_point_id   (new column)
+      fromShop,
+      toShop,
+      fromShopId:  f.fromShop,
+      toShopId:    f.toShop,
+      fromPointId: f.fromPoint,
+      toPointId:   f.toPoint,
       qty:  f.qty,
       date: new Date().toLocaleDateString('fr-FR'),
     }, ...prev]);
