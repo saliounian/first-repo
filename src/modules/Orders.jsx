@@ -5,6 +5,7 @@ import MobileTopBar from '../components/MobileTopBar.jsx';
 import ActionMenu from '../components/ActionMenu.jsx';
 import { Card } from '../components/ui.jsx';
 import { useStore } from '../context/StoreContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
 import { ORDER_STATUSES, uid } from '../data/store.js';
 
 // Compute list of products available in a shop (from stockByPoint)
@@ -92,19 +93,23 @@ function OrderModal({ order, clients, shops, products, stockPoints, stockByPoint
           {/* Client */}
           <div>
             <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Client *</label>
-            {clients.length > 0 ? (
+            {clients.length > 0 && (
               <select value={f.clientId} onChange={e => {
                 const c = clients.find(c => c.id === e.target.value);
                 set('clientId', e.target.value);
                 set('client', c?.name || '');
                 if (c?.phone) set('phone', c.phone);
-              }} className="field-input">
-                <option value="">Choisir un client…</option>
+              }} className="field-input mb-2">
+                <option value="">— Choisir un client existant —</option>
                 {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
-            ) : (
-              <input value={f.client} onChange={e => set('client', e.target.value)} placeholder="Nom du client" className="field-input"/>
             )}
+            <input
+              value={f.client}
+              onChange={e => { set('client', e.target.value); set('clientId', ''); }}
+              placeholder={clients.length > 0 ? 'Ou saisir un nom manuellement…' : 'Nom du client'}
+              className="field-input"
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -365,6 +370,7 @@ function OrderDetail({ order, onClose }) {
 export default function Orders() {
   const { orders, setOrders, clients, shops, products, stockPoints, stockByPoint,
           consumeStockForOrder, restoreStockFromBreakdown } = useStore();
+  const { user } = useAuth();
   const [modal, setModal]       = useState(null);
   const [detail, setDetail]     = useState(null);
   const [toDelete, setToDelete] = useState(null);
@@ -398,10 +404,17 @@ export default function Orders() {
   function save(o) {
     setOrders(prev => {
       const i = prev.findIndex(x => x.id === o.id);
-      const prevStatus = i >= 0 ? prev[i].status : null;
+      const prevStatus   = i >= 0 ? prev[i].status : null;
       const prevBreakdown = i >= 0 ? prev[i].stockBreakdown : null;
-      let processed = i >= 0 ? { ...prev[i], ...o, stockBreakdown: prevBreakdown } : o;
-      // Apply stock effect based on status transition
+      // Stamp creator on new orders only (preserve on edits)
+      const withUser = i >= 0 ? o : {
+        ...o,
+        createdById:  o.createdById  ?? user?.id   ?? null,
+        createdByNom: o.createdByNom ?? user?.nom  ?? null,
+      };
+      let processed = i >= 0
+        ? { ...prev[i], ...withUser, stockBreakdown: prevBreakdown }
+        : withUser;
       processed = applyStockEffect(processed, prevStatus, o.status);
 
       if (i >= 0) { const n = [...prev]; n[i] = processed; return n; }

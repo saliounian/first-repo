@@ -46,6 +46,49 @@ async function allowedFilter(req, cfg) {
   return { col: cfg.shopFilter, vals: shops };
 }
 
+// ─── Stock by point — special endpoints (composite PK) ──────────────────────
+// DOIT être avant /:entity — Express matche dans l'ordre et GET /:entity
+// intercepterait GET /stock (entity='stock' → 404 → Promise.all échoue → état vide).
+
+// GET /api/data/stock — returns nested object: { productId: { pointId: qty } }
+router.get('/stock', async (_req, res) => {
+  const { data, error } = await supabase.from('stock_by_point').select('*');
+  if (error) return res.status(500).json({ error: error.message });
+  const nested = {};
+  for (const row of (data || [])) {
+    if (!nested[row.product_id]) nested[row.product_id] = {};
+    nested[row.product_id][row.point_id] = row.qty;
+  }
+  res.json(nested);
+});
+
+// PUT /api/data/stock — receives full nested map, replaces entire table
+router.put('/stock', async (req, res) => {
+  const map = req.body || {};
+  const rows = [];
+  for (const productId in map) {
+    for (const pointId in map[productId]) {
+      rows.push({ product_id: productId, point_id: pointId, qty: map[productId][pointId] });
+    }
+  }
+  // Replace all rows: delete then insert (transaction-like via Supabase)
+  await supabase.from('stock_by_point').delete().neq('product_id', '___never___');
+  if (rows.length > 0) {
+    const { error } = await supabase.from('stock_by_point').insert(rows);
+    if (error) return res.status(500).json({ error: error.message });
+  }
+  res.json({ ok: true });
+});
+
+// PATCH /api/data/stock/cell — update single cell { productId, pointId, qty }
+router.patch('/stock/cell', async (req, res) => {
+  const { productId, pointId, qty } = req.body;
+  if (!productId || !pointId) return res.status(400).json({ error: 'productId + pointId required' });
+  const { error } = await supabase.from('stock_by_point').upsert({ product_id: productId, point_id: pointId, qty: qty || 0 });
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
 // ─── GET /api/data/:entity ──────────────────────────────────────────────────
 router.get('/:entity', async (req, res) => {
   const cfg = ENTITIES[req.params.entity];
@@ -87,46 +130,6 @@ router.delete('/:entity/:id', async (req, res) => {
   if (!cfg) return res.status(404).json({ error: 'Entity not found' });
   const pk = cfg.pkCol || 'id';
   const { error } = await supabase.from(cfg.table).delete().eq(pk, req.params.id);
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ ok: true });
-});
-
-// ─── Stock by point — special endpoints (composite PK) ──────────────────────
-// GET /api/data/stock — returns nested object: { productId: { pointId: qty } }
-router.get('/stock', async (_req, res) => {
-  const { data, error } = await supabase.from('stock_by_point').select('*');
-  if (error) return res.status(500).json({ error: error.message });
-  const nested = {};
-  for (const row of (data || [])) {
-    if (!nested[row.product_id]) nested[row.product_id] = {};
-    nested[row.product_id][row.point_id] = row.qty;
-  }
-  res.json(nested);
-});
-
-// PUT /api/data/stock — receives full nested map, replaces entire table
-router.put('/stock', async (req, res) => {
-  const map = req.body || {};
-  const rows = [];
-  for (const productId in map) {
-    for (const pointId in map[productId]) {
-      rows.push({ product_id: productId, point_id: pointId, qty: map[productId][pointId] });
-    }
-  }
-  // Replace all rows: delete then insert (transaction-like via Supabase)
-  await supabase.from('stock_by_point').delete().neq('product_id', '___never___');
-  if (rows.length > 0) {
-    const { error } = await supabase.from('stock_by_point').insert(rows);
-    if (error) return res.status(500).json({ error: error.message });
-  }
-  res.json({ ok: true });
-});
-
-// PATCH /api/data/stock/cell — update single cell { productId, pointId, qty }
-router.patch('/stock/cell', async (req, res) => {
-  const { productId, pointId, qty } = req.body;
-  if (!productId || !pointId) return res.status(400).json({ error: 'productId + pointId required' });
-  const { error } = await supabase.from('stock_by_point').upsert({ product_id: productId, point_id: pointId, qty: qty || 0 });
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
 });

@@ -18,6 +18,7 @@ const Clients        = lazy(() => import('./modules/Clients.jsx'));
 const Invoices       = lazy(() => import('./modules/Invoices.jsx'));
 const Reports        = lazy(() => import('./modules/Reports.jsx'));
 const Admin          = lazy(() => import('./modules/Admin.jsx'));
+const Performances   = lazy(() => import('./modules/Performances.jsx'));
 
 const ROUTES = {
   dashboard:    { Component: Dashboard,     title: 'Tableau de bord' },
@@ -29,6 +30,7 @@ const ROUTES = {
   clients:      { Component: Clients,       title: 'Clients' },
   invoices:     { Component: Invoices,      title: 'Factures' },
   reports:      { Component: Reports,       title: 'Rapports' },
+  performances: { Component: Performances, title: 'Performances' },
   admin:        { Component: Admin,         title: 'Administration' }
 };
 
