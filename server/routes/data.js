@@ -43,8 +43,9 @@ async function allowedFilter(req, cfg) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// IMPORTANT : les routes spécifiques (/stock, /stock/cell) DOIVENT être déclarées
-// AVANT les routes génériques (/:entity), sinon Express matche /stock comme entity
+// IMPORTANT : routes spécifiques (/stock, /stock/cell) AVANT les routes
+// génériques (/:entity), sinon Express matche /stock comme entity → 404
+// → Promise.all dans StoreContext échoue → tout l'état reste vide.
 // ═══════════════════════════════════════════════════════════════════════════
 
 // ─── GET /api/data/stock ────────────────────────────────────────────────────
@@ -59,7 +60,7 @@ router.get('/stock', async (_req, res) => {
   res.json(nested);
 });
 
-// ─── PUT /api/data/stock — bulk upsert (no FK race) ─────────────────────────
+// ─── PUT /api/data/stock — upsert (pas de delete race condition) ─────────────
 router.put('/stock', async (req, res) => {
   const map = req.body || {};
   const rows = [];
@@ -69,16 +70,13 @@ router.put('/stock', async (req, res) => {
     }
   }
   if (rows.length === 0) {
-    // Empty map = clear all
     await supabase.from('stock_by_point').delete().neq('product_id', '___never___');
     return res.json({ ok: true });
   }
-
-  // Upsert all rows (no delete first → no race condition with parallel POST)
   const { error: upErr } = await supabase.from('stock_by_point').upsert(rows, { onConflict: 'product_id,point_id' });
   if (upErr) return res.status(500).json({ error: upErr.message });
 
-  // Cleanup rows not in payload (cells that were removed)
+  // Supprimer les cellules absentes du payload
   const { data: existing } = await supabase.from('stock_by_point').select('product_id,point_id');
   const sentKeys = new Set(rows.map(r => `${r.product_id}::${r.point_id}`));
   const toDelete = (existing || []).filter(r => !sentKeys.has(`${r.product_id}::${r.point_id}`));
@@ -100,7 +98,7 @@ router.patch('/stock/cell', async (req, res) => {
   res.json({ ok: true });
 });
 
-// ─── Generic CRUD (declared AFTER specific routes) ─────────────────────────
+// ─── Generic CRUD (déclarés APRÈS les routes spécifiques) ─────────────────
 router.get('/:entity', async (req, res) => {
   const cfg = ENTITIES[req.params.entity];
   if (!cfg) return res.status(404).json({ error: 'Entity not found' });

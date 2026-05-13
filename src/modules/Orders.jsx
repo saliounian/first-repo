@@ -5,6 +5,7 @@ import MobileTopBar from '../components/MobileTopBar.jsx';
 import ActionMenu from '../components/ActionMenu.jsx';
 import { Card } from '../components/ui.jsx';
 import { useStore } from '../context/StoreContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
 import { ORDER_STATUSES, uid } from '../data/store.js';
 
 // Compute list of products available in a shop (from stockByPoint)
@@ -98,7 +99,6 @@ function OrderModal({ order, clients, setClients, shops, products, stockPoints, 
               onChange={e => {
                 const name = e.target.value;
                 set('client', name);
-                // Match exact (case-insensitive) avec un client existant
                 const match = clients.find(c => c.name.toLowerCase().trim() === name.toLowerCase().trim());
                 if (match) {
                   set('clientId', match.id);
@@ -113,7 +113,6 @@ function OrderModal({ order, clients, setClients, shops, products, stockPoints, 
               {clients.map(c => <option key={c.id} value={c.name}/>)}
             </datalist>
             {f.clientId && <div className="text-[10px] text-brick-600 mt-1">✓ Client existant relié</div>}
-            {!f.clientId && f.client.trim() && <div className="text-[10px] text-muted mt-1">Nouveau client — sera créé automatiquement</div>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -403,6 +402,7 @@ function OrderDetail({ order, onClose }) {
 export default function Orders() {
   const { orders, setOrders, clients, setClients, shops, products, stockPoints, stockByPoint,
           consumeStockForOrder, restoreStockFromBreakdown } = useStore();
+  const { user } = useAuth();
   const [modal, setModal]       = useState(null);
   const [detail, setDetail]     = useState(null);
   const [toDelete, setToDelete] = useState(null);
@@ -436,10 +436,17 @@ export default function Orders() {
   function save(o) {
     setOrders(prev => {
       const i = prev.findIndex(x => x.id === o.id);
-      const prevStatus = i >= 0 ? prev[i].status : null;
+      const prevStatus   = i >= 0 ? prev[i].status : null;
       const prevBreakdown = i >= 0 ? prev[i].stockBreakdown : null;
-      let processed = i >= 0 ? { ...prev[i], ...o, stockBreakdown: prevBreakdown } : o;
-      // Apply stock effect based on status transition
+      // Stamp creator on new orders only (preserve on edits)
+      const withUser = i >= 0 ? o : {
+        ...o,
+        createdById:  o.createdById  ?? user?.id   ?? null,
+        createdByNom: o.createdByNom ?? user?.nom  ?? null,
+      };
+      let processed = i >= 0
+        ? { ...prev[i], ...withUser, stockBreakdown: prevBreakdown }
+        : withUser;
       processed = applyStockEffect(processed, prevStatus, o.status);
 
       if (i >= 0) { const n = [...prev]; n[i] = processed; return n; }

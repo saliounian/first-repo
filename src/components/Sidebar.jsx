@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, BarChart3, Package, ClipboardList, ShoppingCart,
-  Users, FileText, FileBarChart, LogOut, ShieldCheck, Store
+  Users, FileText, FileBarChart, LogOut, ShieldCheck, Store, TrendingUp
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import ThemeToggle from './ThemeToggle.jsx';
@@ -14,7 +14,8 @@ const NAV = [
   { id: 'orders',       label: 'Commandes',        icon: ShoppingCart,    perm: { module: 'commandes',  action: 'voir' } },
   { id: 'clients',      label: 'Clients',          icon: Users,           perm: { module: 'clients',    action: 'voir' } },
   { id: 'invoices',     label: 'Factures',         icon: FileText,        perm: { module: 'finances',   action: 'voir_ca' } },
-  { id: 'reports',      label: 'Rapports',         icon: FileBarChart,    perm: { module: 'rapports',   action: 'voir' } }
+  { id: 'reports',      label: 'Rapports',         icon: FileBarChart,    perm: { module: 'rapports',   action: 'voir' } },
+  { id: 'performances', label: 'Performances',     icon: TrendingUp,      perm: { module: 'commandes',  action: 'voir' } }
 ];
 
 const ROLE_DISPLAY = {

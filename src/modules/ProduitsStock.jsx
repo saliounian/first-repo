@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, Plus, ArrowRight, Edit2, Trash2, CheckCircle, X, Package } from 'lucide-react';
+import { Search, Plus, ArrowRight, Edit2, Trash2, CheckCircle, X, Package, PackagePlus } from 'lucide-react';
 import PageHeader from '../components/PageHeader.jsx';
 import MobileTopBar from '../components/MobileTopBar.jsx';
 import { Card, Badge, Tabs } from '../components/ui.jsx';
@@ -270,6 +270,139 @@ function TransferModal({ shops, stockPoints, products, stockByPoint, onClose, on
   );
 }
 
+// ─── Restock modal ────────────────────────────────────────────────────────────
+// Ajoute du stock depuis un fournisseur externe.
+// Enregistré dans transfers avec fromShopId = null (marqueur "approvisionnement").
+// Aucun changement de schéma Supabase — colonnes existantes nullables suffisent.
+function RestockModal({ product, products, shops, stockPoints, onClose, onRestock }) {
+  const isPreset = !!product;
+  const [f, setF] = useState({
+    productId: product?.id || '',
+    shopId:    '',
+    pointId:   '',
+    qty:       1,
+    source:    'Fournisseur',
+  });
+  const [done, setDone] = useState(false);
+  const set = (k, v) => setF(p => ({ ...p, [k]: v }));
+
+  const pts          = stockPoints.filter(sp => sp.shopId === f.shopId);
+  const selectedProd = isPreset ? product : products.find(p => p.id === f.productId);
+  const canSubmit    = (isPreset || f.productId) && f.shopId && f.pointId && f.qty >= 1;
+
+  if (done) return (
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center">
+      <div className="bg-surface rounded-2xl p-8 text-center shadow-xl">
+        <CheckCircle size={44} className="text-emerald-500 mx-auto mb-2" />
+        <div className="font-semibold text-ink">Stock réapprovisionné</div>
+        <div className="text-sm text-muted mt-1">+{f.qty} unité{f.qty > 1 ? 's' : ''} ajoutée{f.qty > 1 ? 's' : ''}</div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto py-4 px-4 flex items-start lg:items-center justify-center">
+      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md my-auto">
+        <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-line/70 sticky top-0 bg-surface">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 grid place-items-center">
+              <PackagePlus size={16} className="text-emerald-600" />
+            </div>
+            <div>
+              <div className="font-semibold text-ink">Réapprovisionner</div>
+              <div className="text-xs text-muted">Entrée de stock fournisseur</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-sand text-muted"><X size={15} /></button>
+        </div>
+
+        <div className="px-5 py-4 space-y-4">
+          {/* Produit */}
+          {isPreset ? (
+            <div className="bg-bone rounded-xl px-4 py-3 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-100 grid place-items-center shrink-0">
+                <Package size={14} className="text-emerald-700" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-ink truncate">{selectedProd?.name}</div>
+                <div className="text-xs text-muted">{selectedProd?.sku ? `${selectedProd.sku} · ` : ''}{selectedProd?.category}</div>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Produit *</label>
+              <select value={f.productId} onChange={e => set('productId', e.target.value)} className="field-input">
+                <option value="">Choisir un produit…</option>
+                {products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </div>
+          )}
+
+          {/* Destination */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Boutique *</label>
+              <select value={f.shopId} onChange={e => { set('shopId', e.target.value); set('pointId', ''); }} className="field-input">
+                <option value="">Choisir…</option>
+                {shops.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Point de stock *</label>
+              <select value={f.pointId} onChange={e => set('pointId', e.target.value)} disabled={!f.shopId} className="field-input disabled:opacity-50">
+                <option value="">Choisir…</option>
+                {pts.map(sp => <option key={sp.id} value={sp.id}>{sp.name}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Quantité */}
+          <div>
+            <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Quantité à ajouter *</label>
+            <div className="flex items-center gap-3">
+              <button onClick={() => set('qty', Math.max(1, f.qty - 1))}
+                className="w-9 h-9 rounded-xl border border-line/70 grid place-items-center hover:bg-sand font-semibold text-lg leading-none">−</button>
+              <input type="number" min="1" value={f.qty}
+                onChange={e => set('qty', Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-20 text-center py-2 border border-line/70 rounded-xl font-semibold text-lg focus:outline-none focus:border-emerald-400" />
+              <button onClick={() => set('qty', f.qty + 1)}
+                className="w-9 h-9 rounded-xl border border-line/70 grid place-items-center hover:bg-sand font-semibold text-lg leading-none">+</button>
+            </div>
+          </div>
+
+          {/* Source */}
+          <div>
+            <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Source / Fournisseur</label>
+            <input value={f.source} onChange={e => set('source', e.target.value)}
+              placeholder="Fournisseur" className="field-input" />
+          </div>
+        </div>
+
+        <div className="flex gap-3 px-5 pb-5">
+          <button onClick={onClose} className="flex-1 py-2.5 border border-line/70 rounded-xl text-sm font-medium hover:bg-sand">Annuler</button>
+          <button
+            disabled={!canSubmit}
+            onClick={() => {
+              onRestock({
+                productId: isPreset ? product.id : f.productId,
+                shopId:    f.shopId,
+                pointId:   f.pointId,
+                qty:       f.qty,
+                source:    f.source.trim() || 'Fournisseur',
+              });
+              setDone(true);
+              setTimeout(() => { setDone(false); onClose(); }, 1000);
+            }}
+            className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 text-white rounded-xl text-sm font-medium"
+          >
+            Réapprovisionner
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 export default function ProduitsStock() {
   const {
@@ -280,17 +413,20 @@ export default function ProduitsStock() {
     categories, setCategories,
   } = useStore();
 
-  const [tab, setTab]           = useState('catalogue');
-  const [search, setSearch]     = useState('');
+  const [tab, setTab]             = useState('catalogue');
+  const [search, setSearch]       = useState('');
   const [filterCat, setFilterCat] = useState('');
   const [filterShop, setFilterShop] = useState('');
   const [productModal, setProductModal] = useState(null);
   const [transferModal, setTransferModal] = useState(false);
-  const [toDelete, setToDelete] = useState(null);
+  const [restockTarget, setRestockTarget] = useState(null);
+  // restockTarget = null | product object (pre-fill) | true (generic)
+  const [toDelete, setToDelete]   = useState(null);
+  const [histFilter, setHistFilter] = useState('all');
 
   const tabs = [
     { id: 'catalogue',  label: 'Catalogue',  count: products.length },
-    { id: 'transferts', label: 'Transferts', count: transfers.length },
+    { id: 'transferts', label: 'Historique', count: transfers.length },
   ];
 
   function saveProduct(p, stockInit) {
@@ -298,7 +434,6 @@ export default function ProduitsStock() {
       const i = prev.findIndex(x => x.id === p.id);
       return i >= 0 ? prev.map((x, j) => j === i ? p : x) : [...prev, p];
     });
-    // Save new category to store
     if (p.category && !categories.includes(p.category)) {
       setCategories(prev => [...prev, p.category]);
     }
@@ -340,6 +475,33 @@ export default function ProduitsStock() {
     }, ...prev]);
   }
 
+  // Réapprovisionnement : ajoute qty sans débiter de point source.
+  // fromShopId = null = marqueur "approvisionnement" (colonnes déjà nullables).
+  function doRestock({ productId, shopId, pointId, qty, source }) {
+    setStockByPt(prev => ({
+      ...prev,
+      [productId]: {
+        ...(prev[productId] || {}),
+        [pointId]: (prev[productId]?.[pointId] || 0) + qty,
+      },
+    }));
+    const prod  = products.find(p => p.id === productId);
+    const shop  = shops.find(s => s.id === shopId);
+    const point = stockPoints.find(sp => sp.id === pointId);
+    setTransfers(prev => [{
+      id:          uid(),
+      product:     prod?.name,
+      fromShop:    source,
+      toShop:      `${shop?.name} / ${point?.name}`,
+      fromShopId:  null,
+      toShopId:    shopId,
+      fromPointId: null,
+      toPointId:   pointId,
+      qty,
+      date:        new Date().toLocaleDateString('fr-FR'),
+    }, ...prev]);
+  }
+
   function totalStock(pid) {
     const row = stockByPoint[pid] || {};
     return Object.values(row).reduce((s, v) => s + v, 0);
@@ -354,6 +516,12 @@ export default function ProduitsStock() {
   if (filterShop) filtered = filtered.filter(p => {
     const pts = stockPoints.filter(sp => sp.shopId === filterShop).map(sp => sp.id);
     return pts.some(spId => (stockByPoint[p.id]?.[spId] || 0) > 0);
+  });
+
+  const filteredTransfers = transfers.filter(tr => {
+    if (histFilter === 'restock')  return !tr.fromShopId;
+    if (histFilter === 'transfer') return !!tr.fromShopId;
+    return true;
   });
 
   return (
@@ -371,6 +539,16 @@ export default function ProduitsStock() {
           shops={shops} stockPoints={stockPoints} products={products} stockByPoint={stockByPoint}
           onClose={() => setTransferModal(false)}
           onTransfer={doTransfer}
+        />
+      )}
+      {restockTarget !== null && (
+        <RestockModal
+          product={restockTarget === true ? null : restockTarget}
+          products={products}
+          shops={shops}
+          stockPoints={stockPoints}
+          onClose={() => setRestockTarget(null)}
+          onRestock={doRestock}
         />
       )}
       {toDelete && (
@@ -393,9 +571,13 @@ export default function ProduitsStock() {
       <MobileTopBar subtitle="PRODUITS & STOCK" />
 
       <div className="px-4 lg:px-8 py-5 space-y-4">
-        <div className="lg:hidden">
-          <button onClick={() => setProductModal('add')} className="w-full py-2.5 bg-brick-500 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2">
+        {/* Mobile buttons */}
+        <div className="lg:hidden flex gap-2">
+          <button onClick={() => setProductModal('add')} className="flex-1 py-2.5 bg-brick-500 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2">
             <Plus size={14} /> Nouveau produit
+          </button>
+          <button onClick={() => setRestockTarget(true)} className="flex-1 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-medium flex items-center justify-center gap-2">
+            <PackagePlus size={14} /> Réapprovisionner
           </button>
         </div>
 
@@ -442,14 +624,15 @@ export default function ProduitsStock() {
                         </th>
                       ))}
                       <th className="text-right py-2.5 px-3 font-medium">Total</th>
-                      <th className="w-20 py-2.5 px-5"></th>
+                      <th className="w-28 py-2.5 px-5"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {filtered.map(p => {
                       const total = totalStock(p.id);
+                      const isOut = total === 0;
                       return (
-                        <tr key={p.id} className="border-b border-line/40 last:border-0 hover:bg-bone/50 group">
+                        <tr key={p.id} className={`border-b border-line/40 last:border-0 hover:bg-bone/50 group ${isOut ? 'bg-rose-50/30' : ''}`}>
                           <td className="py-3 px-5">
                             <div className="font-medium text-ink">{p.name}</div>
                             {p.sku && <div className="text-[11px] text-muted">{p.sku}</div>}
@@ -461,19 +644,35 @@ export default function ProduitsStock() {
                             const qty = pts.reduce((s, spId) => s + ((stockByPoint[p.id] || {})[spId] || 0), 0);
                             return (
                               <td key={sh.id} className="text-center tabular-nums px-2">
-                                <span style={{ color: qty === 0 ? undefined : sh.color }}
-                                  className={qty === 0 ? 'text-muted/40 text-sm' : 'text-sm font-medium'}>
+                                <span style={{ color: qty > 0 ? sh.color : undefined }}
+                                  className={qty === 0 ? 'text-rose-300 text-sm' : 'text-sm font-medium'}>
                                   {qty}
                                 </span>
                               </td>
                             );
                           })}
-                          <td className="text-right tabular-nums px-3 font-semibold">{total}</td>
+                          <td className="text-right tabular-nums px-3">
+                            <div className="flex items-center justify-end gap-1.5">
+                              {isOut && (
+                                <span className="text-[9px] font-bold px-1.5 py-0.5 bg-rose-100 text-rose-600 rounded-full tracking-wide">
+                                  RUPTURE
+                                </span>
+                              )}
+                              <span className={`font-semibold ${isOut ? 'text-rose-500' : ''}`}>{total}</span>
+                            </div>
+                          </td>
                           <td className="px-5">
                             <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button onClick={() => setTransferModal(true)} className="w-7 h-7 grid place-items-center rounded-lg hover:bg-brick-50 text-brick-500"><ArrowRight size={12} /></button>
-                              <button onClick={() => setProductModal(p)} className="w-7 h-7 grid place-items-center rounded-lg hover:bg-sand text-muted"><Edit2 size={12} /></button>
-                              <button onClick={() => setToDelete(p)} className="w-7 h-7 grid place-items-center rounded-lg hover:bg-rose-50 text-muted hover:text-rose-500"><Trash2 size={12} /></button>
+                              <button
+                                onClick={() => setRestockTarget(p)}
+                                title="Réapprovisionner"
+                                className="w-7 h-7 grid place-items-center rounded-lg hover:bg-emerald-50 text-emerald-600"
+                              >
+                                <PackagePlus size={12} />
+                              </button>
+                              <button onClick={() => setTransferModal(true)} title="Transférer" className="w-7 h-7 grid place-items-center rounded-lg hover:bg-brick-50 text-brick-500"><ArrowRight size={12} /></button>
+                              <button onClick={() => setProductModal(p)} title="Modifier" className="w-7 h-7 grid place-items-center rounded-lg hover:bg-sand text-muted"><Edit2 size={12} /></button>
+                              <button onClick={() => setToDelete(p)} title="Supprimer" className="w-7 h-7 grid place-items-center rounded-lg hover:bg-rose-50 text-muted hover:text-rose-500"><Trash2 size={12} /></button>
                             </div>
                           </td>
                         </tr>
@@ -487,21 +686,35 @@ export default function ProduitsStock() {
               <ul className="lg:hidden divide-y divide-line/50">
                 {filtered.map(p => {
                   const total = totalStock(p.id);
+                  const isOut = total === 0;
                   return (
-                    <li key={p.id} className="px-4 py-3">
+                    <li key={p.id} className={`px-4 py-3 ${isOut ? 'bg-rose-50/30' : ''}`}>
                       <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <div className="font-medium text-ink">{p.name}</div>
+                        <div className="min-w-0">
+                          <div className="font-medium text-ink truncate">{p.name}</div>
                           <div className="text-[11px] text-muted">{[p.sku, p.category].filter(Boolean).join(' · ')}</div>
                         </div>
                         <div className="flex gap-1.5 shrink-0">
+                          <button
+                            onClick={() => setRestockTarget(p)}
+                            title="Réapprovisionner"
+                            className="w-8 h-8 grid place-items-center rounded-lg bg-emerald-50 text-emerald-600"
+                          >
+                            <PackagePlus size={13} />
+                          </button>
                           <button onClick={() => setTransferModal(true)} className="w-8 h-8 grid place-items-center rounded-lg bg-brick-50 text-brick-500"><ArrowRight size={13} /></button>
                           <button onClick={() => setProductModal(p)} className="w-8 h-8 grid place-items-center rounded-lg border border-line/70 text-muted"><Edit2 size={12} /></button>
                           <button onClick={() => setToDelete(p)} className="w-8 h-8 grid place-items-center rounded-lg border border-line/70 text-muted hover:text-rose-500"><Trash2 size={12} /></button>
                         </div>
                       </div>
                       <div className="mt-2 flex items-center justify-between text-xs">
-                        <span className="text-muted">Total stock : <span className="font-semibold text-ink">{total}</span></span>
+                        <span className="text-muted flex items-center gap-1.5">
+                          Total :
+                          <span className={`font-semibold ${isOut ? 'text-rose-500' : 'text-ink'}`}>{total}</span>
+                          {isOut && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 bg-rose-100 text-rose-600 rounded-full">RUPTURE</span>
+                          )}
+                        </span>
                         {p.price > 0 && <span className="text-muted tabular-nums">{fmtFcfa(p.price)}</span>}
                       </div>
                       {shops.length > 0 && (
@@ -511,7 +724,7 @@ export default function ProduitsStock() {
                             const qty = pts.reduce((s, spId) => s + ((stockByPoint[p.id] || {})[spId] || 0), 0);
                             return (
                               <div key={sh.id} className="text-center">
-                                <div className="text-xs font-semibold tabular-nums" style={{ color: qty === 0 ? '#ccc' : sh.color }}>{qty}</div>
+                                <div className="text-xs font-semibold tabular-nums" style={{ color: qty === 0 ? '#f87171' : sh.color }}>{qty}</div>
                                 <div className="text-[9px] text-muted">{sh.name.slice(0, 3)}</div>
                               </div>
                             );
@@ -526,38 +739,99 @@ export default function ProduitsStock() {
           )
         )}
 
-        {/* ── TRANSFERTS ── */}
+        {/* ── HISTORIQUE ── */}
         {tab === 'transferts' && (
           <div className="space-y-4">
-            <button onClick={() => setTransferModal(true)}
-              className="flex items-center gap-2 px-4 py-2.5 bg-brick-500 hover:bg-brick-600 text-white rounded-xl text-sm font-medium">
-              <ArrowRight size={14} /> Nouveau transfert
-            </button>
-            {transfers.length === 0 ? (
-              <div className="text-center py-10 text-muted text-sm">Aucun transfert enregistré.</div>
+            {/* Actions */}
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => setTransferModal(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-brick-500 hover:bg-brick-600 text-white rounded-xl text-sm font-medium">
+                <ArrowRight size={14} /> Nouveau transfert
+              </button>
+              <button onClick={() => setRestockTarget(true)}
+                className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium">
+                <PackagePlus size={14} /> Réapprovisionner
+              </button>
+            </div>
+
+            {/* Filtre type */}
+            <div className="flex gap-1.5">
+              {[
+                { id: 'all',      label: `Tout (${transfers.length})` },
+                { id: 'transfer', label: `Transferts (${transfers.filter(t => !!t.fromShopId).length})` },
+                { id: 'restock',  label: `Appros (${transfers.filter(t => !t.fromShopId).length})` },
+              ].map(f => (
+                <button
+                  key={f.id}
+                  onClick={() => setHistFilter(f.id)}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-medium transition-colors ${
+                    histFilter === f.id
+                      ? 'bg-ink text-surface'
+                      : 'bg-bone border border-line/70 text-muted hover:bg-sand'
+                  }`}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            {filteredTransfers.length === 0 ? (
+              <div className="text-center py-10 text-muted text-sm">Aucun enregistrement.</div>
             ) : (
               <Card>
-                <div className="px-5 pt-4 pb-3 text-sm font-semibold text-ink">Historique ({transfers.length})</div>
+                <div className="px-5 pt-4 pb-3 text-sm font-semibold text-ink">Historique ({filteredTransfers.length})</div>
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-y border-line/70 text-[10px] uppercase tracking-[0.12em] text-muted">
                       <th className="text-left py-2.5 px-5 font-medium">Produit</th>
-                      <th className="text-left py-2.5 px-3 font-medium hidden lg:table-cell">De</th>
+                      <th className="text-left py-2.5 px-3 font-medium hidden lg:table-cell">Type</th>
+                      <th className="text-left py-2.5 px-3 font-medium hidden lg:table-cell">De / Source</th>
                       <th className="text-left py-2.5 px-3 font-medium hidden lg:table-cell">Vers</th>
                       <th className="text-right py-2.5 px-3 font-medium">Qté</th>
                       <th className="text-left py-2.5 px-5 font-medium">Date</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {transfers.map(tr => (
-                      <tr key={tr.id} className="border-b border-line/40 last:border-0 hover:bg-bone/50">
-                        <td className="py-3 px-5 font-medium text-ink">{tr.product}</td>
-                        <td className="px-3 text-xs text-muted hidden lg:table-cell">{tr.fromShop}</td>
-                        <td className="px-3 text-xs text-muted hidden lg:table-cell">{tr.toShop}</td>
-                        <td className="px-3 text-right tabular-nums font-semibold">{tr.qty}</td>
-                        <td className="px-5 text-xs text-muted">{tr.date}</td>
-                      </tr>
-                    ))}
+                    {filteredTransfers.map(tr => {
+                      const isRestock = !tr.fromShopId;
+                      return (
+                        <tr key={tr.id} className="border-b border-line/40 last:border-0 hover:bg-bone/50">
+                          <td className="py-3 px-5">
+                            <div className="font-medium text-ink">{tr.product}</div>
+                            <div className="lg:hidden mt-0.5">
+                              {isRestock ? (
+                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[9px] font-semibold">
+                                  ↓ APPRO · {tr.fromShop}
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-muted">{tr.fromShop} → {tr.toShop}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 hidden lg:table-cell">
+                            {isRestock ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-semibold">
+                                <PackagePlus size={9} /> APPRO
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-bone text-muted text-[10px] font-semibold">
+                                <ArrowRight size={9} /> TRANSFERT
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 text-xs text-muted hidden lg:table-cell">
+                            {isRestock ? <span className="italic">{tr.fromShop}</span> : tr.fromShop}
+                          </td>
+                          <td className="px-3 text-xs text-muted hidden lg:table-cell">{tr.toShop}</td>
+                          <td className="px-3 text-right tabular-nums font-semibold">
+                            <span className={isRestock ? 'text-emerald-600' : ''}>
+                              {isRestock ? '+' : ''}{tr.qty}
+                            </span>
+                          </td>
+                          <td className="px-5 text-xs text-muted">{tr.date}</td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </Card>
