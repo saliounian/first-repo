@@ -5,7 +5,7 @@ import { requireAuth, getUserShops } from '../middleware/auth.js';
 const router = Router();
 router.use(requireAuth);
 
-// ─── Helpers conversion camelCase ↔ snake_case (top-level only) ──────────────
+// ─── Helpers ────────────────────────────────────────────────────────────────
 const camelToSnake = k => k.replace(/[A-Z]/g, l => '_' + l.toLowerCase());
 const snakeToCamel = k => k.replace(/_([a-z])/g, (_, l) => l.toUpperCase());
 
@@ -15,7 +15,6 @@ function snakeKeys(obj) {
   for (const k in obj) r[camelToSnake(k)] = obj[k];
   return r;
 }
-
 function camelKeys(obj) {
   if (Array.isArray(obj)) return obj.map(camelKeys);
   if (obj === null || typeof obj !== 'object') return obj;
@@ -24,8 +23,6 @@ function camelKeys(obj) {
   return r;
 }
 
-// ─── Entity config ──────────────────────────────────────────────────────────
-// shopFilter: column to filter by user's allowed shops (null = no filter)
 const ENTITIES = {
   shops:           { table: 'shops',          shopFilter: 'id' },
   products:        { table: 'products',       shopFilter: null },
@@ -37,62 +34,20 @@ const ENTITIES = {
   categories:      { table: 'categories',     shopFilter: null, pkCol: 'name' },
 };
 
-// Restrict shop_filter list to user's allowed shops (admin = unlimited)
 async function allowedFilter(req, cfg) {
   if (!cfg.shopFilter) return null;
   if (req.user.role_nom === 'admin') return null;
   const shops = await getUserShops(req.user.id);
-  if (shops.length === 0) return null; // no restriction set = all allowed
+  if (shops.length === 0) return null;
   return { col: cfg.shopFilter, vals: shops };
 }
 
-// ─── GET /api/data/:entity ──────────────────────────────────────────────────
-router.get('/:entity', async (req, res) => {
-  const cfg = ENTITIES[req.params.entity];
-  if (!cfg) return res.status(404).json({ error: 'Entity not found' });
+// ═══════════════════════════════════════════════════════════════════════════
+// IMPORTANT : les routes spécifiques (/stock, /stock/cell) DOIVENT être déclarées
+// AVANT les routes génériques (/:entity), sinon Express matche /stock comme entity
+// ═══════════════════════════════════════════════════════════════════════════
 
-  let q = supabase.from(cfg.table).select('*');
-  const filt = await allowedFilter(req, cfg);
-  if (filt) q = q.in(filt.col, filt.vals);
-
-  const { data, error } = await q;
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(camelKeys(data || []));
-});
-
-// ─── POST /api/data/:entity (upsert) ────────────────────────────────────────
-router.post('/:entity', async (req, res) => {
-  const cfg = ENTITIES[req.params.entity];
-  if (!cfg) return res.status(404).json({ error: 'Entity not found' });
-  const payload = snakeKeys(req.body);
-  const { data, error } = await supabase.from(cfg.table).upsert(payload).select().single();
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(camelKeys(data));
-});
-
-// ─── PUT /api/data/:entity/:id (update) ─────────────────────────────────────
-router.put('/:entity/:id', async (req, res) => {
-  const cfg = ENTITIES[req.params.entity];
-  if (!cfg) return res.status(404).json({ error: 'Entity not found' });
-  const pk = cfg.pkCol || 'id';
-  const payload = snakeKeys(req.body);
-  const { data, error } = await supabase.from(cfg.table).update(payload).eq(pk, req.params.id).select().single();
-  if (error) return res.status(500).json({ error: error.message });
-  res.json(camelKeys(data));
-});
-
-// ─── DELETE /api/data/:entity/:id ───────────────────────────────────────────
-router.delete('/:entity/:id', async (req, res) => {
-  const cfg = ENTITIES[req.params.entity];
-  if (!cfg) return res.status(404).json({ error: 'Entity not found' });
-  const pk = cfg.pkCol || 'id';
-  const { error } = await supabase.from(cfg.table).delete().eq(pk, req.params.id);
-  if (error) return res.status(500).json({ error: error.message });
-  res.json({ ok: true });
-});
-
-// ─── Stock by point — special endpoints (composite PK) ──────────────────────
-// GET /api/data/stock — returns nested object: { productId: { pointId: qty } }
+// ─── GET /api/data/stock ────────────────────────────────────────────────────
 router.get('/stock', async (_req, res) => {
   const { data, error } = await supabase.from('stock_by_point').select('*');
   if (error) return res.status(500).json({ error: error.message });
@@ -104,29 +59,83 @@ router.get('/stock', async (_req, res) => {
   res.json(nested);
 });
 
-// PUT /api/data/stock — receives full nested map, replaces entire table
+// ─── PUT /api/data/stock — bulk upsert (no FK race) ─────────────────────────
 router.put('/stock', async (req, res) => {
   const map = req.body || {};
   const rows = [];
   for (const productId in map) {
     for (const pointId in map[productId]) {
-      rows.push({ product_id: productId, point_id: pointId, qty: map[productId][pointId] });
+      rows.push({ product_id: productId, point_id: pointId, qty: map[productId][pointId] || 0 });
     }
   }
-  // Replace all rows: delete then insert (transaction-like via Supabase)
-  await supabase.from('stock_by_point').delete().neq('product_id', '___never___');
-  if (rows.length > 0) {
-    const { error } = await supabase.from('stock_by_point').insert(rows);
-    if (error) return res.status(500).json({ error: error.message });
+  if (rows.length === 0) {
+    // Empty map = clear all
+    await supabase.from('stock_by_point').delete().neq('product_id', '___never___');
+    return res.json({ ok: true });
+  }
+
+  // Upsert all rows (no delete first → no race condition with parallel POST)
+  const { error: upErr } = await supabase.from('stock_by_point').upsert(rows, { onConflict: 'product_id,point_id' });
+  if (upErr) return res.status(500).json({ error: upErr.message });
+
+  // Cleanup rows not in payload (cells that were removed)
+  const { data: existing } = await supabase.from('stock_by_point').select('product_id,point_id');
+  const sentKeys = new Set(rows.map(r => `${r.product_id}::${r.point_id}`));
+  const toDelete = (existing || []).filter(r => !sentKeys.has(`${r.product_id}::${r.point_id}`));
+  for (const r of toDelete) {
+    await supabase.from('stock_by_point').delete().eq('product_id', r.product_id).eq('point_id', r.point_id);
   }
   res.json({ ok: true });
 });
 
-// PATCH /api/data/stock/cell — update single cell { productId, pointId, qty }
+// ─── PATCH /api/data/stock/cell ─────────────────────────────────────────────
 router.patch('/stock/cell', async (req, res) => {
   const { productId, pointId, qty } = req.body;
-  if (!productId || !pointId) return res.status(400).json({ error: 'productId + pointId required' });
-  const { error } = await supabase.from('stock_by_point').upsert({ product_id: productId, point_id: pointId, qty: qty || 0 });
+  if (!productId || !pointId) return res.status(400).json({ error: 'productId + pointId requis' });
+  const { error } = await supabase.from('stock_by_point').upsert(
+    { product_id: productId, point_id: pointId, qty: qty || 0 },
+    { onConflict: 'product_id,point_id' }
+  );
+  if (error) return res.status(500).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// ─── Generic CRUD (declared AFTER specific routes) ─────────────────────────
+router.get('/:entity', async (req, res) => {
+  const cfg = ENTITIES[req.params.entity];
+  if (!cfg) return res.status(404).json({ error: 'Entity not found' });
+  let q = supabase.from(cfg.table).select('*');
+  const filt = await allowedFilter(req, cfg);
+  if (filt) q = q.in(filt.col, filt.vals);
+  const { data, error } = await q;
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(camelKeys(data || []));
+});
+
+router.post('/:entity', async (req, res) => {
+  const cfg = ENTITIES[req.params.entity];
+  if (!cfg) return res.status(404).json({ error: 'Entity not found' });
+  const payload = snakeKeys(req.body);
+  const { data, error } = await supabase.from(cfg.table).upsert(payload).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(camelKeys(data));
+});
+
+router.put('/:entity/:id', async (req, res) => {
+  const cfg = ENTITIES[req.params.entity];
+  if (!cfg) return res.status(404).json({ error: 'Entity not found' });
+  const pk = cfg.pkCol || 'id';
+  const payload = snakeKeys(req.body);
+  const { data, error } = await supabase.from(cfg.table).update(payload).eq(pk, req.params.id).select().single();
+  if (error) return res.status(500).json({ error: error.message });
+  res.json(camelKeys(data));
+});
+
+router.delete('/:entity/:id', async (req, res) => {
+  const cfg = ENTITIES[req.params.entity];
+  if (!cfg) return res.status(404).json({ error: 'Entity not found' });
+  const pk = cfg.pkCol || 'id';
+  const { error } = await supabase.from(cfg.table).delete().eq(pk, req.params.id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
 });

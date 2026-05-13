@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from './AuthContext.jsx';
 import { dataApi } from '../utils/api.js';
+import { toast } from '../utils/toast.jsx';
 
 const StoreContext = createContext(null);
 
@@ -12,33 +13,31 @@ const StoreContext = createContext(null);
  *
  * Items are identified by `id`. Diff = added/updated rows + removed rows.
  */
-function makeSyncedSetter({ entity, items, setItems, fetchAll }) {
+function makeSyncedSetter({ entity, setItems, fetchAll }) {
   return (updater) => {
-    const next = typeof updater === 'function' ? updater(items) : updater;
-    const prev = items;
-    setItems(next); // optimistic
-
-    const prevIds = new Set(prev.map(x => x.id));
-    const nextIds = new Set(next.map(x => x.id));
-
-    // Removed
-    const removed = prev.filter(x => !nextIds.has(x.id));
-    // Added or changed
-    const upserts = next.filter(x => {
-      const old = prev.find(p => p.id === x.id);
-      return !old || JSON.stringify(old) !== JSON.stringify(x);
-    });
-
-    Promise.all([
-      ...removed.map(x => dataApi.remove(entity, x.id)),
-      ...upserts.map(x => dataApi.upsert(entity, x)),
-    ]).catch(async (e) => {
-      console.error(`[StoreContext] sync ${entity} failed`, e);
-      // Recover from server state
-      try {
-        const server = await fetchAll();
-        setItems(server);
-      } catch {}
+    // Use the functional setState so prev is always React's latest state (no stale closure)
+    setItems(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      const nextIds = new Set(next.map(x => x.id));
+      const removed = prev.filter(x => !nextIds.has(x.id));
+      const upserts = next.filter(x => {
+        const old = prev.find(p => p.id === x.id);
+        return !old || JSON.stringify(old) !== JSON.stringify(x);
+      });
+      Promise.all([
+        ...removed.map(x => dataApi.remove(entity, x.id)),
+        ...upserts.map(x => dataApi.upsert(entity, x)),
+      ]).catch(async (e) => {
+        console.error(`[StoreContext] sync ${entity} failed`, e);
+        toast.error(`Erreur sauvegarde ${entity}: ${e.message || e}`);
+        try {
+          const server = await fetchAll();
+          setItems(server);
+        } catch (e2) {
+          console.error(`[StoreContext] recover ${entity} failed`, e2);
+        }
+      });
+      return next;
     });
   };
 }
@@ -102,33 +101,42 @@ export function StoreProvider({ children }) {
   }, [user?.id, authLoading]);
 
   // ─── Synced setters (write-through to API) ────────────────────────────────
-  const setShops        = useCallback(makeSyncedSetter({ entity: 'shops',         items: shops,        setItems: setShopsState,        fetchAll: () => dataApi.list('shops') }),         [shops]);
-  const setProducts     = useCallback(makeSyncedSetter({ entity: 'products',      items: products,     setItems: setProductsState,     fetchAll: () => dataApi.list('products') }),      [products]);
-  const setStockPoints  = useCallback(makeSyncedSetter({ entity: 'stock-points',  items: stockPoints,  setItems: setStockPointsState,  fetchAll: () => dataApi.list('stock-points') }),  [stockPoints]);
-  const setClients      = useCallback(makeSyncedSetter({ entity: 'clients',       items: clients,      setItems: setClientsState,      fetchAll: () => dataApi.list('clients') }),       [clients]);
-  const setOrders       = useCallback(makeSyncedSetter({ entity: 'orders',        items: orders,       setItems: setOrdersState,       fetchAll: () => dataApi.list('orders') }),        [orders]);
-  const setInvoices     = useCallback(makeSyncedSetter({ entity: 'invoices',      items: invoices,     setItems: setInvoicesState,     fetchAll: () => dataApi.list('invoices') }),      [invoices]);
-  const setTransfers    = useCallback(makeSyncedSetter({ entity: 'transfers',     items: transfers,    setItems: setTransfersState,    fetchAll: () => dataApi.list('transfers') }),     [transfers]);
+  const setShops        = useMemo(() => makeSyncedSetter({ entity: 'shops',         setItems: setShopsState,        fetchAll: () => dataApi.list('shops') }), []);
+  const setProducts     = useMemo(() => makeSyncedSetter({ entity: 'products',      setItems: setProductsState,     fetchAll: () => dataApi.list('products') }), []);
+  const setStockPoints  = useMemo(() => makeSyncedSetter({ entity: 'stock-points',  setItems: setStockPointsState,  fetchAll: () => dataApi.list('stock-points') }), []);
+  const setClients      = useMemo(() => makeSyncedSetter({ entity: 'clients',       setItems: setClientsState,      fetchAll: () => dataApi.list('clients') }), []);
+  const setOrders       = useMemo(() => makeSyncedSetter({ entity: 'orders',        setItems: setOrdersState,       fetchAll: () => dataApi.list('orders') }), []);
+  const setInvoices     = useMemo(() => makeSyncedSetter({ entity: 'invoices',      setItems: setInvoicesState,     fetchAll: () => dataApi.list('invoices') }), []);
+  const setTransfers    = useMemo(() => makeSyncedSetter({ entity: 'transfers',     setItems: setTransfersState,    fetchAll: () => dataApi.list('transfers') }), []);
 
-  // Categories use {name} as PK — special setter (replace strategy)
-  const setCategories = useCallback((updater) => {
-    const next = typeof updater === 'function' ? updater(categories) : updater;
-    const prev = categories;
-    setCategoriesState(next);
-    const added = next.filter(n => !prev.includes(n));
-    const removed = prev.filter(n => !next.includes(n));
-    Promise.all([
-      ...removed.map(n => dataApi.remove('categories', n)),
-      ...added.map(n => dataApi.upsert('categories', { name: n })),
-    ]).catch(e => console.error('[categories]', e));
-  }, [categories]);
+  // Categories ({name} as PK) — functional setter
+  const setCategories = useMemo(() => (updater) => {
+    setCategoriesState(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      const added = next.filter(n => !prev.includes(n));
+      const removed = prev.filter(n => !next.includes(n));
+      Promise.all([
+        ...removed.map(n => dataApi.remove('categories', n)),
+        ...added.map(n => dataApi.upsert('categories', { name: n })),
+      ]).catch(e => {
+        console.error('[categories]', e);
+        toast.error(`Erreur sauvegarde catégories: ${e.message || e}`);
+      });
+      return next;
+    });
+  }, []);
 
-  // Stock by point — bulk replace strategy via PUT /data/stock
-  const setStockByPoint = useCallback((updater) => {
-    const next = typeof updater === 'function' ? updater(stockByPoint) : updater;
-    setStockByPointState(next);
-    dataApi.putStock(next).catch(e => console.error('[stock]', e));
-  }, [stockByPoint]);
+  // Stock by point — bulk replace via PUT /data/stock
+  const setStockByPoint = useMemo(() => (updater) => {
+    setStockByPointState(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      dataApi.putStock(next).catch(e => {
+        console.error('[stock]', e);
+        toast.error(`Erreur sauvegarde stock: ${e.message || e}`);
+      });
+      return next;
+    });
+  }, []);
 
   // ─── Shop access filter (frontend safety) ─────────────────────────────────
   const isRestricted = (allowedShops?.length || 0) > 0 && user?.role !== 'admin';

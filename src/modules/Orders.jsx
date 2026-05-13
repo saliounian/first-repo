@@ -44,7 +44,7 @@ function calcNet(f) {
   return base + apply(f.fraisLivraison) + apply(f.fraisInstallation) + apply(f.fraisService);
 }
 
-function OrderModal({ order, clients, shops, products, stockPoints, stockByPoint, onClose, onSave }) {
+function OrderModal({ order, clients, setClients, shops, products, stockPoints, stockByPoint, onClose, onSave }) {
   const isEdit = !!order;
   const blank  = { montant: '', sens: '+' };
   const [f, setF] = useState({
@@ -89,22 +89,31 @@ function OrderModal({ order, clients, shops, products, stockPoints, stockByPoint
         </div>
 
         <div className="px-5 py-4 space-y-3">
-          {/* Client */}
+          {/* Client (champ libre + autocomplétion sur clients existants) */}
           <div>
             <label className="text-[10px] uppercase tracking-widest text-muted block mb-1.5">Client *</label>
-            {clients.length > 0 ? (
-              <select value={f.clientId} onChange={e => {
-                const c = clients.find(c => c.id === e.target.value);
-                set('clientId', e.target.value);
-                set('client', c?.name || '');
-                if (c?.phone) set('phone', c.phone);
-              }} className="field-input">
-                <option value="">Choisir un client…</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
-            ) : (
-              <input value={f.client} onChange={e => set('client', e.target.value)} placeholder="Nom du client" className="field-input"/>
-            )}
+            <input
+              list="client-suggestions"
+              value={f.client}
+              onChange={e => {
+                const name = e.target.value;
+                set('client', name);
+                // Match exact (case-insensitive) avec un client existant
+                const match = clients.find(c => c.name.toLowerCase().trim() === name.toLowerCase().trim());
+                if (match) {
+                  set('clientId', match.id);
+                  if (match.phone && !f.phone) set('phone', match.phone);
+                } else {
+                  set('clientId', '');
+                }
+              }}
+              placeholder="Nom du client" className="field-input"
+            />
+            <datalist id="client-suggestions">
+              {clients.map(c => <option key={c.id} value={c.name}/>)}
+            </datalist>
+            {f.clientId && <div className="text-[10px] text-brick-600 mt-1">✓ Client existant relié</div>}
+            {!f.clientId && f.client.trim() && <div className="text-[10px] text-muted mt-1">Nouveau client — sera créé automatiquement</div>}
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -288,12 +297,41 @@ function OrderModal({ order, clients, shops, products, stockPoints, stockByPoint
 
         <div className="flex gap-3 px-5 pb-5">
           <button onClick={onClose} className="flex-1 py-2.5 border border-line/70 rounded-xl text-sm font-medium hover:bg-sand">Annuler</button>
-          <button disabled={!f.client && !f.clientId} onClick={() => {
-            const clientObj = clients.find(c => c.id === f.clientId);
+          <button disabled={!f.client.trim()} onClick={() => {
+            // Match client : par ID, sinon par nom (case-insensitive trimmed), sinon par téléphone
+            const nameTrim = f.client.trim();
+            const phoneTrim = (f.phone || '').trim();
+            let existing = clients.find(c =>
+              (f.clientId && c.id === f.clientId) ||
+              (nameTrim && c.name.toLowerCase().trim() === nameTrim.toLowerCase()) ||
+              (phoneTrim && c.phone && c.phone.trim() === phoneTrim)
+            );
+
+            let resolvedClientId = existing?.id;
+            const resolvedClientName = existing?.name || nameTrim;
+
+            // Pas trouvé → créer client automatiquement
+            if (!existing && nameTrim) {
+              const newClient = {
+                id:        uid(),
+                name:      nameTrim,
+                phone:     phoneTrim,
+                type:      'nouveau',
+                address:   f.adresseLivraison || '',
+                email:     '',
+                note:      '',
+                orders:    0,
+                total:     0,
+                createdAt: new Date().toISOString(),
+              };
+              setClients(prev => [...prev, newClient]);
+              resolvedClientId = newClient.id;
+            }
+
             onSave({
               id:               order?.id || `#${Date.now().toString(36).toUpperCase().slice(-6)}`,
-              client:           clientObj?.name || f.client,
-              clientId:         f.clientId || null,
+              client:           resolvedClientName,
+              clientId:         resolvedClientId || null,
               phone:            f.phone,
               shop:             shops.find(s => s.id === f.shopId)?.name || f.shop,
               shopId:           f.shopId,
@@ -363,7 +401,7 @@ function OrderDetail({ order, onClose }) {
 }
 
 export default function Orders() {
-  const { orders, setOrders, clients, shops, products, stockPoints, stockByPoint,
+  const { orders, setOrders, clients, setClients, shops, products, stockPoints, stockByPoint,
           consumeStockForOrder, restoreStockFromBreakdown } = useStore();
   const [modal, setModal]       = useState(null);
   const [detail, setDetail]     = useState(null);
@@ -440,7 +478,7 @@ export default function Orders() {
 
   return (
     <div className="fade-in">
-      {modal !== null && <OrderModal order={modal === 'add' ? null : modal} clients={clients} shops={shops} products={products} stockPoints={stockPoints} stockByPoint={stockByPoint} onClose={() => setModal(null)} onSave={save}/>}
+      {modal !== null && <OrderModal order={modal === 'add' ? null : modal} clients={clients} setClients={setClients} shops={shops} products={products} stockPoints={stockPoints} stockByPoint={stockByPoint} onClose={() => setModal(null)} onSave={save}/>}
       {detail   && <OrderDetail order={detail} onClose={() => setDetail(null)}/>}
       {toDelete && (
         <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto py-4 px-4 flex items-start lg:items-center justify-center">
