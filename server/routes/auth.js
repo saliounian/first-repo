@@ -11,10 +11,25 @@ router.post('/login', async (req, res) => {
   if (!email || !password)
     return res.status(400).json({ error: 'Email et mot de passe requis.' });
 
-  const { data, error } = await supabase.rpc('get_user_by_email', { p_email: email.toLowerCase().trim() });
-  const user = data?.[0];
+  const p_email = email.toLowerCase().trim();
 
-  if (error || !user) {
+  // Erreur DB/RPC (ex: projet Supabase en pause, réseau) ≠ identifiants invalides.
+  // Ne pas masquer une panne derrière un faux « mot de passe incorrect ».
+  // Retry léger (1 tentative après 500ms) pour absorber un cold-start Supabase
+  // après reprise du projet. Ne s'applique QU'AU cas erreur, jamais au cas !user.
+  let data, error;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    ({ data, error } = await supabase.rpc('get_user_by_email', { p_email }));
+    if (!error) break;
+    console.error(`[login] RPC get_user_by_email (tentative ${attempt + 1}):`, error);
+    if (attempt === 0) await new Promise(r => setTimeout(r, 500));
+  }
+  if (error) {
+    return res.status(503).json({ error: 'Service temporairement indisponible, réessayez dans quelques instants.' });
+  }
+
+  const user = data?.[0];
+  if (!user) {
     await logActivity({ action: `Tentative connexion échouée (email inconnu: ${email})`, module: 'auth', resultat: 'echec', raisonEchec: 'Email inconnu' });
     return res.status(401).json({ error: 'Email ou mot de passe incorrect.' });
   }
