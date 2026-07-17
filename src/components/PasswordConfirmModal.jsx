@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Lock, X, AlertTriangle } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { toast } from '../utils/toast.jsx';
+import Modal from './Modal.jsx';
 
 /**
  * Confirmation modal asking the current user to re-enter their password
@@ -49,9 +50,8 @@ export default function PasswordConfirmModal({
   const ring   = tone === 'warning' ? 'text-amber-500' : 'text-rose-500';
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm slide-in p-4" onClick={onCancel}>
-      <form onSubmit={submit} onClick={e => e.stopPropagation()}
-        className="bg-surface rounded-2xl shadow-pop w-full max-w-md">
+    <Modal onClose={onCancel} closeOnBackdrop z="z-[60]" backdrop="bg-black/50 backdrop-blur-sm">
+      <form onSubmit={submit} className="bg-surface rounded-2xl shadow-pop w-full max-w-md">
         <div className="px-6 pt-5 pb-4 border-b border-line/60 flex items-start justify-between">
           <div className="flex items-start gap-3">
             <div className={`w-10 h-10 rounded-lg grid place-items-center bg-bone ${ring}`}>
@@ -94,6 +94,6 @@ export default function PasswordConfirmModal({
           </button>
         </div>
       </form>
-    </div>
+    </Modal>
   );
 }

@@ -6,6 +6,7 @@ import {
 import { useAuth } from '../context/AuthContext.jsx';
 import { useStore } from '../context/StoreContext.jsx';
 import { Card } from '../components/ui.jsx';
+import Modal from '../components/Modal.jsx';
 import MobileTopBar from '../components/MobileTopBar.jsx';
 import { AccessDenied } from '../components/Gate.jsx';
 
@@ -380,9 +381,8 @@ function UserModal({ editUser, onClose, onSaved }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 backdrop-blur-sm slide-in flex items-end lg:items-start justify-center lg:py-6" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()}
-        className="bg-surface w-full lg:rounded-2xl lg:max-w-[700px] lg:shadow-pop h-full lg:h-auto lg:my-auto flex flex-col">
+    <Modal onClose={onClose} closeOnBackdrop backdrop="bg-black/50 backdrop-blur-sm">
+      <div className="bg-surface w-full rounded-2xl max-w-[700px] shadow-pop flex flex-col">
 
         {/* Header */}
         <div className="px-6 pt-5 pb-4 border-b border-line/60 flex items-start justify-between">
@@ -556,7 +556,7 @@ function UserModal({ editUser, onClose, onSaved }) {
           </div>
         </form>
       </div>
-    </div>
+    </Modal>
   );
 }
 

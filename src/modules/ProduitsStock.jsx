@@ -3,6 +3,7 @@ import { Search, Plus, ArrowRight, Edit2, Trash2, CheckCircle, X, Package, Packa
 import PageHeader from '../components/PageHeader.jsx';
 import MobileTopBar from '../components/MobileTopBar.jsx';
 import { Card, Badge, Tabs } from '../components/ui.jsx';
+import Modal from '../components/Modal.jsx';
 import { useStore } from '../context/StoreContext.jsx';
 import { uid } from '../data/store.js';
 import { fmtFcfa, fmtDateTime } from '../utils/format.js';
@@ -48,8 +49,8 @@ function ProductModal({ product, shops, stockPoints, categories = [], onClose, o
   );
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto py-4 px-4 flex items-start lg:items-center justify-center">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md my-auto">
+    <Modal onClose={onClose}>
+      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-line/70 sticky top-0 bg-surface">
           <div className="font-semibold text-ink">{isEdit ? 'Modifier le produit' : 'Nouveau produit'}</div>
           <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-sand text-muted"><X size={15} /></button>
@@ -119,7 +120,7 @@ function ProductModal({ product, shops, stockPoints, categories = [], onClose, o
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -153,8 +154,8 @@ function TransferModal({ shops, stockPoints, products, stockByPoint, onClose, on
   );
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto py-4 px-4 flex items-start lg:items-center justify-center">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md my-auto">
+    <Modal onClose={onClose}>
+      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-line/70 sticky top-0 bg-surface">
           <div>
             <div className="font-semibold text-ink">Transfert de stock</div>
@@ -266,7 +267,7 @@ function TransferModal({ shops, stockPoints, products, stockByPoint, onClose, on
           )}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -301,8 +302,8 @@ function RestockModal({ product, products, shops, stockPoints, onClose, onRestoc
   );
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto py-4 px-4 flex items-start lg:items-center justify-center">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md my-auto">
+    <Modal onClose={onClose}>
+      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-line/70 sticky top-0 bg-surface">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-lg bg-emerald-50 grid place-items-center">
@@ -399,7 +400,7 @@ function RestockModal({ product, products, shops, stockPoints, onClose, onRestoc
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -552,7 +553,7 @@ export default function ProduitsStock() {
         />
       )}
       {toDelete && (
-        <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto py-4 px-4 flex items-start lg:items-center justify-center">
+        <Modal onClose={() => setToDelete(null)} closeOnBackdrop>
           <div className="bg-surface rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
             <Trash2 size={36} className="text-rose-500 mx-auto mb-3" />
             <div className="font-semibold text-ink mb-1">Supprimer « {toDelete.name} » ?</div>
@@ -562,7 +563,7 @@ export default function ProduitsStock() {
               <button onClick={() => deleteProduct(toDelete.id)} className="flex-1 py-2.5 bg-rose-500 hover:bg-rose-600 text-white rounded-xl text-sm font-medium">Supprimer</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       <div className="hidden lg:block">

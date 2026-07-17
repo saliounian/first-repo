@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader.jsx';
 import MobileTopBar from '../components/MobileTopBar.jsx';
 import ActionMenu from '../components/ActionMenu.jsx';
 import { Card, Badge, Tabs } from '../components/ui.jsx';
+import Modal from '../components/Modal.jsx';
 import { useStore } from '../context/StoreContext.jsx';
 import { INVOICE_STATUSES, ORDER_STATUSES, uid } from '../data/store.js';
 import { fmtFcfa, fmtDateTime, fmtDate } from '../utils/format.js';
@@ -208,8 +209,8 @@ function InvoicePreviewModal({ inv, shop, onShare, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[55] overflow-y-auto py-4 px-2 lg:px-4 flex items-start lg:items-center justify-center" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-surface rounded-2xl shadow-xl w-full max-w-3xl my-auto flex flex-col" style={{ maxHeight: '95vh' }}>
+    <Modal onClose={onClose} closeOnBackdrop z="z-[55]" backdrop="bg-black/60">
+      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-3xl flex flex-col" style={{ maxHeight: '95vh' }}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-line/70 gap-2 flex-wrap">
           <div className="min-w-0">
             <div className="font-semibold text-ink truncate">Aperçu facture {inv.id}</div>
@@ -235,7 +236,7 @@ function InvoicePreviewModal({ inv, shop, onShare, onClose }) {
             className="bg-white shadow-lg" style={{ width: '794px', maxWidth: '100%', height: '1123px', border: '0' }}/>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -300,8 +301,8 @@ function ShareModal({ inv, shop, onClose }) {
   ];
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto py-4 px-4 flex items-start lg:items-center justify-center" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-surface rounded-2xl shadow-xl w-full max-w-md my-auto">
+    <Modal onClose={onClose} closeOnBackdrop>
+      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-line/70">
           <div>
             <div className="font-semibold text-ink">Partager la facture</div>
@@ -337,7 +338,7 @@ function ShareModal({ inv, shop, onClose }) {
           </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -364,8 +365,8 @@ function OrderPickerModal({ orders, onPick, onClose }) {
     !search || o.client?.toLowerCase().includes(search.toLowerCase()) || o.id?.includes(search)
   );
   return (
-    <div className="fixed inset-0 bg-black/60 z-[60] overflow-y-auto py-4 px-4 flex items-start lg:items-center justify-center" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="bg-surface rounded-2xl shadow-xl w-full max-w-md my-auto max-h-[80vh] flex flex-col">
+    <Modal onClose={onClose} closeOnBackdrop z="z-[60]" backdrop="bg-black/60">
+      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-line/70">
           <div className="font-semibold text-ink">Choisir une commande</div>
           <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-sand text-muted"><X size={15}/></button>
@@ -394,7 +395,7 @@ function OrderPickerModal({ orders, onPick, onClose }) {
           ))}
         </ul>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -459,8 +460,8 @@ function InvoiceModal({ invoice, clients, shops, products, stockPoints, stockByP
   return (
     <>
       {pickOrder && <OrderPickerModal orders={orders} onPick={loadFromOrder} onClose={() => setPickOrder(false)}/>}
-      <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto py-4 px-4 flex items-start lg:items-center justify-center">
-        <div className="bg-surface rounded-2xl shadow-xl w-full max-w-lg my-auto">
+      <Modal onClose={onClose}>
+        <div className="bg-surface rounded-2xl shadow-xl w-full max-w-lg">
           <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-line/70 sticky top-0 bg-surface z-10">
             <div className="font-semibold text-ink">{isEdit ? 'Modifier la facture' : 'Nouvelle facture'}</div>
             <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-sand text-muted"><X size={15}/></button>
@@ -638,7 +639,7 @@ function InvoiceModal({ invoice, clients, shops, products, stockPoints, stockByP
             </button>
           </div>
         </div>
-      </div>
+      </Modal>
     </>
   );
 }
@@ -701,7 +702,7 @@ export default function Invoices() {
       {shareInv && <ShareModal inv={shareInv} shop={shopFor(shareInv)} onClose={() => setShareInv(null)}/>}
       {previewInv && <InvoicePreviewModal inv={previewInv} shop={shopFor(previewInv)} onShare={(i) => { setShareInv(i); }} onClose={() => setPreviewInv(null)}/>}
       {toDelete && (
-        <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto py-4 px-4 flex items-start lg:items-center justify-center">
+        <Modal onClose={() => setToDelete(null)} closeOnBackdrop>
           <div className="bg-surface rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
             <Trash2 size={36} className="text-rose-500 mx-auto mb-3"/>
             <div className="font-semibold text-ink mb-1">Supprimer {toDelete.id} ?</div>
@@ -710,7 +711,7 @@ export default function Invoices() {
               <button onClick={() => remove(toDelete.id)} className="flex-1 py-2.5 bg-rose-500 hover:bg-rose-600 text-white rounded-xl text-sm font-medium">Supprimer</button>
             </div>
           </div>
-        </div>
+        </Modal>
       )}
 
       <div className="hidden lg:block">

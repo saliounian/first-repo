@@ -174,27 +174,41 @@ export function StoreProvider({ children }) {
     return pts.reduce((s, spId) => s + (row[spId] || 0), 0);
   }
 
-  // Dynamic stock stats for a stock point — reads only stockInitial + real orders + real transfers.
-  // Never reads stale stored stockVendu / stockActuel.
+  // Dynamic stock stats for a stock point.
   //
-  // initial = stockInitial (user-set opening balance)
-  //         + Σ transfers arriving at this point (toPointId = spId)
-  //         - Σ transfers leaving this point    (fromPointId = spId)
-  // vendu   = Σ qty from delivered/prepared orders whose lineItem.pointId = spId
-  // actuel  = initial - vendu
+  // Initial = photo FIGÉE du stock de départ. Ne bouge JAMAIS sur un transfert
+  //           inter-points ni une commande — uniquement sur un réapprovisionnement
+  //           (entrée de nouvelles quantités, loggée avec fromPointId = null).
+  //     initial = stockInitial (saisi à la création/modif du point)
+  //             + Σ réappros arrivant ici (toPointId = spId ET fromPointId = null)
+  //
+  // Actuels = stock réel disponible, recalculé dynamiquement :
+  //     actuel = initial
+  //            + Σ transferts inter-points entrants (toPointId = spId, fromPointId ≠ null)
+  //            − Σ transferts inter-points sortants (fromPointId = spId)
+  //            − vendu
+  //
+  // Vendus  = Σ qty des commandes livrées/préparées dont lineItem.pointId = spId
+  //
+  // Un réappro n'a pas de fromPointId → jamais compté comme "sortant". Un transfert
+  // inter-points a fromPointId ET toPointId → jamais compté dans Initial. Pas de
+  // double comptage.
   function computeStockPointStats(spId) {
     const sp = stockPoints.find(p => p.id === spId);
     const base = sp?.stockInitial || 0;
 
-    // Transfer effects — only counted when point-level IDs are present
-    const transfersIn  = transfers
-      .filter(t => t.toPointId === spId)
+    const reapproIn = transfers
+      .filter(t => t.toPointId === spId && (t.fromPointId == null || t.fromPointId === ''))
+      .reduce((s, t) => s + (t.qty || 0), 0);
+    const transfersIn = transfers
+      .filter(t => t.toPointId === spId && t.fromPointId != null && t.fromPointId !== '')
       .reduce((s, t) => s + (t.qty || 0), 0);
     const transfersOut = transfers
       .filter(t => t.fromPointId === spId)
       .reduce((s, t) => s + (t.qty || 0), 0);
 
-    const initial = base + transfersIn - transfersOut;
+    // Initial figé (+ réappros seulement)
+    const initial = base + reapproIn;
 
     const vendu = orders.reduce((sum, o) => {
       if (o.status !== 'livrée' && o.status !== 'préparée') return sum;
@@ -203,7 +217,9 @@ export function StoreProvider({ children }) {
         .reduce((s, item) => s + (item.qty || 0), 0);
     }, 0);
 
-    return { initial, vendu, actuel: initial - vendu };
+    const actuel = initial + transfersIn - transfersOut - vendu;
+
+    return { initial, vendu, actuel };
   }
 
   // ─── Stock consume / restore (livraison de commande) ─────────────────────

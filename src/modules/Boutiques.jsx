@@ -4,6 +4,7 @@ import PageHeader from '../components/PageHeader.jsx';
 import MobileTopBar from '../components/MobileTopBar.jsx';
 import ActionMenu from '../components/ActionMenu.jsx';
 import { Card, KpiCard } from '../components/ui.jsx';
+import Modal from '../components/Modal.jsx';
 import { useStore } from '../context/StoreContext.jsx';
 import { SHOP_COLORS, uid } from '../data/store.js';
 import { fmtFcfa } from '../utils/format.js';
@@ -31,8 +32,8 @@ function ShopModal({ shop, onClose, onSave }) {
   );
 
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto py-4 px-4 flex items-start lg:items-center justify-center">
-      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md my-auto">
+    <Modal onClose={onClose}>
+      <div className="bg-surface rounded-2xl shadow-xl w-full max-w-md">
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-line/70 sticky top-0 bg-surface z-10">
           <div className="font-semibold text-ink">{isEdit ? 'Modifier la boutique' : 'Nouvelle boutique'}</div>
           <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-sand text-muted"><X size={15}/></button>
@@ -75,13 +76,13 @@ function ShopModal({ shop, onClose, onSave }) {
           </button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 
 function DeleteConfirm({ label, onConfirm, onCancel }) {
   return (
-    <div className="fixed inset-0 bg-black/40 z-50 overflow-y-auto py-4 px-4 flex items-start lg:items-center justify-center">
+    <Modal onClose={onCancel} closeOnBackdrop>
       <div className="bg-surface rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
         <Trash2 size={36} className="text-rose-500 mx-auto mb-3"/>
         <div className="font-semibold text-ink mb-1">Supprimer « {label} » ?</div>
@@ -91,7 +92,7 @@ function DeleteConfirm({ label, onConfirm, onCancel }) {
           <button onClick={onConfirm} className="flex-1 py-2.5 bg-rose-500 hover:bg-rose-600 text-white rounded-xl text-sm font-medium">Supprimer</button>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

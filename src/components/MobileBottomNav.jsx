@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   Home, Package, Users, MoreHorizontal, Plus,
   BarChart3, FileText, FileBarChart, ShoppingCart,
-  X, LogOut, ShieldCheck, Store, ClipboardList
+  X, LogOut, ShieldCheck, Store, ClipboardList, TrendingUp
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 
@@ -25,6 +25,7 @@ export default function MobileBottomNav({ route, setRoute, onFab }) {
     { id: 'analytics',   label: 'Analytique',      icon: BarChart3,    perm: { module: 'analytique',action: 'voir' } },
     { id: 'invoices',    label: 'Factures',        icon: FileText,     perm: { module: 'finances', action: 'voir_ca' } },
     { id: 'reports',     label: 'Rapports',        icon: FileBarChart, perm: { module: 'rapports', action: 'voir' } },
+    { id: 'performances',label: 'Performances',    icon: TrendingUp,   perm: { module: 'commandes',action: 'voir' } },
     ...(user?.role === 'admin' ? [{ id: 'admin', label: 'Admin', icon: ShieldCheck }] : [])
   ].filter(item => !item.perm || can(item.perm.module, item.perm.action));
 
