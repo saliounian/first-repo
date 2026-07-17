@@ -3,6 +3,7 @@ import { Download, BarChart3 } from 'lucide-react';
 import PageHeader from '../components/PageHeader.jsx';
 import MobileTopBar from '../components/MobileTopBar.jsx';
 import { Card, CardHeader, KpiCard, HBarRow, Donut, Tabs } from '../components/ui.jsx';
+import StatChartModal from '../components/StatChartModal.jsx';
 import { useStore } from '../context/StoreContext.jsx';
 import { fmtFcfa, fmtDateTime } from '../utils/format.js';
 import { downloadCSV } from '../utils/download.js';
@@ -21,6 +22,7 @@ function Legend({ color, label, value }) {
 export default function Analytics() {
   const { orders, clients, products, shops, stockPoints, stockByPoint, totalStockForProduct } = useStore();
   const [shopFilter, setShopFilter] = useState('all');
+  const [chartMetric, setChartMetric] = useState(null); // 'ca' | 'orders' | 'panier' | 'clients'
 
   // ── Computed KPIs ──────────────────────────────────────────────────────────
   const filteredOrders = shopFilter === 'all'
@@ -92,13 +94,25 @@ export default function Analytics() {
       <MobileTopBar subtitle="ANALYTIQUE"/>
 
       <div className="px-4 lg:px-8 py-5 space-y-5">
-        {/* KPIs */}
+        {/* KPIs — cliquables → graphe d'évolution */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <KpiCard label="CA total"      value={fmtFcfa(totalCA)}                         accent large/>
-          <KpiCard label="Commandes"     value={nbOrders}/>
-          <KpiCard label="Panier moyen"  value={fmtFcfa(panier)}  sublabel="cmds livrées"/>
-          <KpiCard label="Clients"       value={nbClients}/>
+          <KpiCard label="CA total"      value={fmtFcfa(totalCA)}                         accent large onClick={() => setChartMetric('ca')}/>
+          <KpiCard label="Commandes"     value={nbOrders}                                             onClick={() => setChartMetric('orders')}/>
+          <KpiCard label="Panier moyen"  value={fmtFcfa(panier)}  sublabel="cmds livrées"             onClick={() => setChartMetric('panier')}/>
+          <KpiCard label="Clients"       value={nbClients}                                            onClick={() => setChartMetric('clients')}/>
         </div>
+
+        {chartMetric && (
+          <StatChartModal
+            metric={chartMetric}
+            initialPeriod="month"
+            orders={orders}
+            clients={clients}
+            shops={shops}
+            shopFilter={shopFilter}
+            onClose={() => setChartMetric(null)}
+          />
+        )}
 
         {/* Filtre boutique */}
         <div className="overflow-x-auto no-scrollbar">

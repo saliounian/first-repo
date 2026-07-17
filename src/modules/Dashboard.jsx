@@ -1,12 +1,15 @@
+import { useState } from 'react';
 import { ShoppingCart, Users, Package, Store, ArrowRight } from 'lucide-react';
 import MobileTopBar from '../components/MobileTopBar.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import { Card, KpiCard } from '../components/ui.jsx';
+import StatChartModal from '../components/StatChartModal.jsx';
 import { useStore } from '../context/StoreContext.jsx';
 import { fmtFcfa, fmtDateTime } from '../utils/format.js';
 
 export default function Dashboard({ navigate }) {
   const { shops, products, clients, orders, stockPoints, totalStockForProduct } = useStore();
+  const [showCAChart, setShowCAChart] = useState(false);
 
   const totalStock   = products.reduce((s, p) => s + totalStockForProduct(p.id), 0);
   const pending      = orders.filter(o => o.status === 'attente').length;
@@ -28,10 +31,22 @@ export default function Dashboard({ navigate }) {
       </div>
       <MobileTopBar subtitle="TABLEAU DE BORD"/>
 
+      {showCAChart && (
+        <StatChartModal
+          metric="ca"
+          initialPeriod="today"
+          orders={orders}
+          clients={clients}
+          shops={shops}
+          shopFilter="all"
+          onClose={() => setShowCAChart(false)}
+        />
+      )}
+
       <div className="px-4 lg:px-8 py-5 space-y-5">
         {/* KPIs */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <KpiCard label="CA aujourd'hui"  value={fmtFcfa(todayCA)}   accent large/>
+          <KpiCard label="CA aujourd'hui"  value={fmtFcfa(todayCA)}   accent large onClick={() => setShowCAChart(true)}/>
           <KpiCard label="Cmds en attente" value={pending}            delta={pending > 0 ? 'À traiter' : 'Aucune'} deltaTone={pending > 0 ? 'neg' : 'pos'}/>
           <KpiCard label="Unités en stock" value={totalStock.toLocaleString('fr-FR')}/>
           <KpiCard label="Clients"         value={clients.length}/>

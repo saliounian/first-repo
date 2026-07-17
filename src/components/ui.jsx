@@ -22,13 +22,18 @@ export function CardHeader({ title, subtitle, action }) {
 }
 
 // ---------------- KPI ----------------
-export function KpiCard({ label, value, delta, deltaTone = 'pos', sublabel, accent = false, large = false }) {
+export function KpiCard({ label, value, delta, deltaTone = 'pos', sublabel, accent = false, large = false, onClick }) {
   const toneClass =
     deltaTone === 'pos' ? 'text-brick-500'
     : deltaTone === 'neg' ? 'text-amber-600'
     : 'text-muted';
+  const clickable = typeof onClick === 'function';
+  const clickProps = clickable ? { as: 'button', type: 'button', onClick } : {};
   return (
-    <Card className={`${accent ? 'bg-brick-50/70 border-brick-100' : ''} px-6 py-5`}>
+    <Card
+      {...clickProps}
+      className={`${accent ? 'bg-brick-50/70 border-brick-100' : ''} px-6 py-5 ${clickable ? 'w-full text-left cursor-pointer hover:shadow-md hover:border-brick-200 transition-shadow' : ''}`}
+    >
       <div className="text-[11px] tracking-[0.14em] text-muted uppercase font-medium">{label}</div>
       <div className={`mt-2 ${large ? 'text-[32px]' : 'text-[26px]'} font-semibold tabular-nums ${accent ? 'text-brick-600' : 'text-ink'} leading-tight`}>
         {value}
@@ -232,6 +237,48 @@ export function LineChart({ data, height = 280, accent = '#0D5C2E', formatY = fm
           J{d.day}
         </text>
       ))}
+    </svg>
+  );
+}
+
+// ---------------- Vertical bar chart (SVG, no deps) ----------------
+// data = [{ label, short?, value }]. formatValue formats tooltip + top labels.
+export function BarChart({ data, height = 260, accent = '#0D5C2E', formatValue = (v) => v, emptyLabel = 'Aucune donnée sur cette période' }) {
+  const max = Math.max(...data.map(d => d.value), 0);
+  if (data.length === 0 || max <= 0) {
+    return <div className="grid place-items-center text-sm text-muted" style={{ height: height * 0.6 }}>{emptyLabel}</div>;
+  }
+  const w = 760, h = height;
+  const pad = { top: 20, right: 12, bottom: 34, left: 8 };
+  const innerW = w - pad.left - pad.right;
+  const innerH = h - pad.top - pad.bottom;
+  const n = data.length;
+  const slot = innerW / n;
+  const barW = Math.max(2, Math.min(46, slot * 0.62));
+  const labelEvery = Math.ceil(n / 12);      // ~12 axis labels max
+  const showTop = n <= 12;                    // value on top only when few bars
+
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} className="w-full h-auto" preserveAspectRatio="none">
+      {data.map((d, i) => {
+        const bh = (d.value / max) * innerH;
+        const x = pad.left + i * slot + (slot - barW) / 2;
+        const y = pad.top + innerH - bh;
+        return (
+          <g key={i}>
+            <rect x={x} y={y} width={barW} height={Math.max(0, bh)} rx={3} fill={accent} opacity={d.value > 0 ? 0.9 : 0.15}>
+              <title>{`${d.label} : ${formatValue(d.value)}`}</title>
+            </rect>
+            {showTop && d.value > 0 && (
+              <text x={x + barW / 2} y={y - 5} textAnchor="middle" fontSize="9" fill="#6b6b6b">{formatValue(d.value)}</text>
+            )}
+            {(i % labelEvery === 0 || i === n - 1) && (
+              <text x={x + barW / 2} y={h - 12} textAnchor="middle" fontSize="10" fill="#9C9C9C">{d.short ?? d.label}</text>
+            )}
+          </g>
+        );
+      })}
+      <line x1={pad.left} x2={w - pad.right} y1={pad.top + innerH} y2={pad.top + innerH} stroke="#E7E3DC" />
     </svg>
   );
 }
