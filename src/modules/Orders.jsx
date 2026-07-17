@@ -16,7 +16,7 @@ function productsForShop(shopId, products, stockPoints, stockByPoint) {
     pts.some(spId => (stockByPoint[p.id] || {})[spId] > 0)
   );
 }
-import { fmtFcfa } from '../utils/format.js';
+import { fmtFcfa, fmtDateTime } from '../utils/format.js';
 
 const STATUS_COLOR = { attente: 'text-amber-600', préparée: 'text-blue-600', livrée: 'text-brick-600', annulée: 'text-rose-500' };
 
@@ -365,7 +365,7 @@ function OrderDetail({ order, onClose }) {
         <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-line/70">
           <div>
             <div className="font-semibold text-ink">Commande {order.id}</div>
-            <div className="text-xs text-muted">{order.date} · {order.shop}</div>
+            <div className="text-xs text-muted">{fmtDateTime(order.createdAt)} · {order.shop}</div>
           </div>
           <button onClick={onClose} className="w-8 h-8 grid place-items-center rounded-lg hover:bg-sand text-muted"><X size={15}/></button>
         </div>
@@ -555,7 +555,7 @@ export default function Orders() {
                     <th className="text-left py-2.5 px-3 font-medium">Articles</th>
                     <th className="text-right py-2.5 px-3 font-medium">Net à payer</th>
                     <th className="text-left py-2.5 px-3 font-medium">Statut</th>
-                    <th className="text-left py-2.5 px-3 font-medium">Heure</th>
+                    <th className="text-left py-2.5 px-3 font-medium">Date</th>
                     <th className="w-12 py-2.5 px-5"></th>
                   </tr>
                 </thead>
@@ -573,7 +573,7 @@ export default function Orders() {
                           {ORDER_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </td>
-                      <td className="px-3 text-muted text-xs">{o.date}</td>
+                      <td className="px-3 text-muted text-xs whitespace-nowrap">{fmtDateTime(o.createdAt)}</td>
                       <td className="px-5">
                         <ActionMenu actions={[
                           { label: 'Voir détail',  icon: Eye,    onClick: () => setDetail(o) },
@@ -601,6 +601,7 @@ export default function Orders() {
                       </div>
                       {o.shop && <div className="text-xs text-muted mt-0.5">{o.shop}</div>}
                       {o.items && <div className="text-xs text-muted truncate">{o.items}</div>}
+                      <div className="text-[11px] text-muted mt-0.5">{fmtDateTime(o.createdAt)}</div>
                       <div className="flex items-center gap-3 mt-2">
                         <span className="font-bold tabular-nums text-sm text-brick-600">{fmtFcfa(o.net ?? o.total ?? 0)}</span>
                         <span className={`text-xs font-medium ${STATUS_COLOR[o.status] || 'text-muted'}`}>{o.status}</span>

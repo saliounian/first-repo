@@ -5,7 +5,7 @@ import MobileTopBar from '../components/MobileTopBar.jsx';
 import { Card, Badge, Tabs } from '../components/ui.jsx';
 import { useStore } from '../context/StoreContext.jsx';
 import { uid } from '../data/store.js';
-import { fmtFcfa } from '../utils/format.js';
+import { fmtFcfa, fmtDateTime } from '../utils/format.js';
 
 function EmptyState({ onAdd }) {
   return (
@@ -828,7 +828,7 @@ export default function ProduitsStock() {
                               {isRestock ? '+' : ''}{tr.qty}
                             </span>
                           </td>
-                          <td className="px-5 text-xs text-muted">{tr.date}</td>
+                          <td className="px-5 text-xs text-muted whitespace-nowrap">{fmtDateTime(tr.createdAt)}</td>
                         </tr>
                       );
                     })}

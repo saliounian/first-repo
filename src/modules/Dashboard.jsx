@@ -3,7 +3,7 @@ import MobileTopBar from '../components/MobileTopBar.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import { Card, KpiCard } from '../components/ui.jsx';
 import { useStore } from '../context/StoreContext.jsx';
-import { fmtFcfa } from '../utils/format.js';
+import { fmtFcfa, fmtDateTime } from '../utils/format.js';
 
 export default function Dashboard({ navigate }) {
   const { shops, products, clients, orders, stockPoints, totalStockForProduct } = useStore();
@@ -73,7 +73,7 @@ export default function Dashboard({ navigate }) {
                   <li key={o.id} className="px-5 py-2.5 flex items-center justify-between">
                     <div>
                       <div className="text-sm font-medium text-ink">{o.client}</div>
-                      <div className="text-xs text-muted">{o.shop || '—'} · {o.date}</div>
+                      <div className="text-xs text-muted">{o.shop || '—'} · {fmtDateTime(o.createdAt)}</div>
                     </div>
                     <div className="text-right">
                       <div className="text-sm font-semibold tabular-nums">{fmtFcfa(o.total || 0)}</div>

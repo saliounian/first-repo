@@ -13,3 +13,23 @@ export const fmtFcfaFull = (n) => {
 };
 
 export const fmtPct = (n) => `${n}%`;
+
+// ─── Date / heure ─────────────────────────────────────────────────────────────
+// Fonction PARTAGÉE web + mobile. Prend un timestamp (created_at ISO, Date, ou
+// nombre) et rend « 17 juil. 2026, 11:33 ». Toujours trier par created_at.
+export const fmtDateTime = (value) => {
+  if (!value) return '—';
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return '—';
+  const date = d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+  const time = d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  return `${date}, ${time}`;
+};
+
+// Variante date seule « 17 juil. 2026 » (exports, en-têtes).
+export const fmtDate = (value) => {
+  if (!value) return '—';
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric' });
+};

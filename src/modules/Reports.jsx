@@ -4,7 +4,7 @@ import PageHeader from '../components/PageHeader.jsx';
 import MobileTopBar from '../components/MobileTopBar.jsx';
 import { Card, CardHeader, KpiCard } from '../components/ui.jsx';
 import { useStore } from '../context/StoreContext.jsx';
-import { fmtFcfa } from '../utils/format.js';
+import { fmtFcfa, fmtDateTime } from '../utils/format.js';
 import { downloadCSV, printHTML, fmtDate } from '../utils/download.js';
 import { toast } from '../utils/toast.jsx';
 
@@ -22,7 +22,7 @@ function buildReport(id, { orders, clients, products, shops, stockPoints, invoic
       return {
         title: 'Ventes & CA',
         headers: ['N°', 'Client', 'Boutique', 'Articles', 'Net à payer', 'Statut', 'Date'],
-        rows: orders.map(o => [o.id, o.client, o.shop || '—', o.items || '—', o.net ?? o.total ?? 0, o.status, o.date || '—']),
+        rows: orders.map(o => [o.id, o.client, o.shop || '—', o.items || '—', o.net ?? o.total ?? 0, o.status, fmtDateTime(o.createdAt)]),
         summary: `${orders.length} commandes · CA ${fmtFcfa(orders.reduce((s, o) => s + (o.net ?? o.total ?? 0), 0))}`,
       };
     case 'inv':
@@ -43,14 +43,14 @@ function buildReport(id, { orders, clients, products, shops, stockPoints, invoic
       return {
         title: 'Factures',
         headers: ['N°', 'Client', 'Boutique', 'Net à payer', 'Statut', 'Date'],
-        rows: invoices.map(i => [i.id, i.client, i.shop || '—', i.net ?? i.total ?? 0, i.status, i.date || '—']),
+        rows: invoices.map(i => [i.id, i.client, i.shop || '—', i.net ?? i.total ?? 0, i.status, fmtDateTime(i.createdAt)]),
         summary: `${invoices.length} factures · Total ${fmtFcfa(invoices.reduce((s, i) => s + (i.net ?? i.total ?? 0), 0))}`,
       };
     case 'transfer':
       return {
         title: 'Transferts inter-boutiques',
         headers: ['Produit', 'De', 'Vers', 'Qté', 'Date'],
-        rows: transfers.map(t => [t.product || '—', t.from || '—', t.to || '—', t.qty || 0, t.date || '—']),
+        rows: transfers.map(t => [t.product || '—', t.fromShop || t.from || '—', t.toShop || t.to || '—', t.qty || 0, fmtDateTime(t.createdAt)]),
         summary: `${transfers.length} transfert(s)`,
       };
     default:

@@ -24,14 +24,16 @@ function camelKeys(obj) {
 }
 
 const ENTITIES = {
-  shops:           { table: 'shops',          shopFilter: 'id' },
-  products:        { table: 'products',       shopFilter: null },
-  'stock-points':  { table: 'stock_points',   shopFilter: 'shop_id' },
-  clients:         { table: 'clients',        shopFilter: null },
-  orders:          { table: 'orders',         shopFilter: 'shop_id' },
-  invoices:        { table: 'invoices',       shopFilter: 'shop_id' },
-  transfers:       { table: 'transfers',      shopFilter: 'from_shop_id' },
-  categories:      { table: 'categories',     shopFilter: null, pkCol: 'name' },
+  // orderBy : tri par défaut au listage (le plus récent en premier).
+  //           null = pas de colonne created_at (ex: categories).
+  shops:           { table: 'shops',          shopFilter: 'id',           orderBy: 'created_at' },
+  products:        { table: 'products',       shopFilter: null,           orderBy: 'created_at' },
+  'stock-points':  { table: 'stock_points',   shopFilter: 'shop_id',      orderBy: 'created_at' },
+  clients:         { table: 'clients',        shopFilter: null,           orderBy: 'created_at' },
+  orders:          { table: 'orders',         shopFilter: 'shop_id',      orderBy: 'created_at' },
+  invoices:        { table: 'invoices',       shopFilter: 'shop_id',      orderBy: 'created_at' },
+  transfers:       { table: 'transfers',      shopFilter: 'from_shop_id', orderBy: 'created_at' },
+  categories:      { table: 'categories',     shopFilter: null, pkCol: 'name', orderBy: null },
 };
 
 async function allowedFilter(req, cfg) {
@@ -105,6 +107,7 @@ router.get('/:entity', async (req, res) => {
   let q = supabase.from(cfg.table).select('*');
   const filt = await allowedFilter(req, cfg);
   if (filt) q = q.in(filt.col, filt.vals);
+  if (cfg.orderBy) q = q.order(cfg.orderBy, { ascending: false });
   const { data, error } = await q;
   if (error) return res.status(500).json({ error: error.message });
   res.json(camelKeys(data || []));

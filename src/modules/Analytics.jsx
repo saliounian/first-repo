@@ -4,7 +4,7 @@ import PageHeader from '../components/PageHeader.jsx';
 import MobileTopBar from '../components/MobileTopBar.jsx';
 import { Card, CardHeader, KpiCard, HBarRow, Donut, Tabs } from '../components/ui.jsx';
 import { useStore } from '../context/StoreContext.jsx';
-import { fmtFcfa } from '../utils/format.js';
+import { fmtFcfa, fmtDateTime } from '../utils/format.js';
 import { downloadCSV } from '../utils/download.js';
 import { toast } from '../utils/toast.jsx';
 
@@ -70,7 +70,7 @@ export default function Analytics() {
   function exportCSV() {
     downloadCSV('analytique-commandes.csv',
       ['Client', 'Boutique', 'Montant', 'Statut', 'Date'],
-      filteredOrders.map(o => [o.client, o.shop, o.net ?? o.total ?? 0, o.status, o.date])
+      filteredOrders.map(o => [o.client, o.shop, o.net ?? o.total ?? 0, o.status, fmtDateTime(o.createdAt)])
     );
     toast.success('Export CSV téléchargé');
   }
@@ -191,7 +191,7 @@ export default function Analytics() {
                       <td className="px-3 text-muted text-xs">{o.shop || '—'}</td>
                       <td className="px-3 text-right tabular-nums font-semibold text-brick-600">{fmtFcfa(o.net ?? o.total ?? 0)}</td>
                       <td className="px-3 text-xs text-muted">{o.status}</td>
-                      <td className="px-5 text-xs text-muted">{o.date}</td>
+                      <td className="px-5 text-xs text-muted whitespace-nowrap">{fmtDateTime(o.createdAt)}</td>
                     </tr>
                   ))}
                 </tbody>

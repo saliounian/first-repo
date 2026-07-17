@@ -6,7 +6,7 @@ import ActionMenu from '../components/ActionMenu.jsx';
 import { Card, Badge, Tabs } from '../components/ui.jsx';
 import { useStore } from '../context/StoreContext.jsx';
 import { INVOICE_STATUSES, ORDER_STATUSES, uid } from '../data/store.js';
-import { fmtFcfa } from '../utils/format.js';
+import { fmtFcfa, fmtDateTime, fmtDate } from '../utils/format.js';
 import { toast } from '../utils/toast.jsx';
 
 function esc(s) {
@@ -64,7 +64,7 @@ function buildInvoiceHTML(inv, shop) {
             <h1 class="title">Facture</h1>
             <div class="invnum">N° : ${esc(inv.id?.replace('#', '') || '—')}</div>
           </div>
-          <div class="date">DATE : ${esc(inv.date || new Date().toLocaleDateString('fr-FR'))}</div>
+          <div class="date">DATE : ${esc(fmtDate(inv.createdAt) !== '—' ? fmtDate(inv.createdAt) : (inv.date || new Date().toLocaleDateString('fr-FR')))}</div>
         </header>
 
         <section class="parties">
@@ -382,7 +382,7 @@ function OrderPickerModal({ orders, onPick, onClose }) {
                 className="w-full flex items-center justify-between px-3 py-3 hover:bg-bone/60 rounded-xl text-left">
                 <div>
                   <div className="font-medium text-sm text-ink">{o.client}</div>
-                  <div className="text-xs text-muted">{o.id} · {o.shop} · {o.date}</div>
+                  <div className="text-xs text-muted">{o.id} · {o.shop} · {fmtDateTime(o.createdAt)}</div>
                   {o.items && <div className="text-xs text-muted truncate max-w-[260px]">{o.items}</div>}
                 </div>
                 <div className="text-right shrink-0 ml-3">
@@ -796,7 +796,7 @@ export default function Invoices() {
                           {INVOICE_STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                         </select>
                       </td>
-                      <td className="px-3 text-muted text-xs">{inv.date}</td>
+                      <td className="px-3 text-muted text-xs whitespace-nowrap">{fmtDateTime(inv.createdAt)}</td>
                       <td className="px-5">
                         <ActionMenu actions={[
                           { label: 'Modifier',   icon: Edit2,     onClick: () => setModal(inv) },
@@ -824,6 +824,7 @@ export default function Invoices() {
                         <span className="font-medium text-ink">{inv.client}</span>
                       </div>
                       {inv.shop && <div className="text-xs text-muted mt-0.5">{inv.shop}</div>}
+                      <div className="text-[11px] text-muted mt-0.5">{fmtDateTime(inv.createdAt)}</div>
                       <div className="flex items-center gap-3 mt-1.5">
                         <span className="font-bold tabular-nums text-brick-600">{fmtFcfa(inv.net ?? inv.total ?? 0)}</span>
                         <Badge tone={STATUS_TONE[inv.status] || 'soft'} size="xs">{inv.status}</Badge>
